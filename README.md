@@ -1,5 +1,5 @@
 # ByteNoise v0.1  
-*A Byte-Level Diffusion Model for Raw Sequence Generation*
+*A Byte-Level Diffusion Model for Byte Sequence Generation*
 
 **ByteNoise** is an ongoing research project exploring the viability of denoising diffusion probabilistic models (DDPMs) applied directly to byte sequences. The model operates without tokenization, treating text as raw byte data and attempting to reconstruct coherent sequences from random noise.
 
