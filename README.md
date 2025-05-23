@@ -6,8 +6,7 @@
 This repository contains:
 - A custom U-Net architecture for 1D byte diffusion
 - Training loop and configuration for autoregressive sampling
-- Initial outputs and loss logs (unstable, early-stage)
 - Roadmap for improvements and failure analysis
 
-> **Warning:** This model is still unstable. Current outputs are mostly noise with occasional structure. Training is active and this repository will be updated as results evolve.
+> **Warning:** This model is still unstable. Current outputs are mostly noise. Training is active and this repository will be updated as results evolve.
 
