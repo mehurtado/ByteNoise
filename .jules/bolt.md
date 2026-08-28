@@ -1,0 +1,3 @@
+## 2026-08-28 - SDPA Requires Contiguous Tensors from Chunk/Rearrange
+**Learning:** When using `torch.nn.functional.scaled_dot_product_attention` (SDPA), if the `q`, `k`, and `v` tensors are created from chunking and rearranging a single `qkv` tensor, they are non-contiguous in memory. SDPA performs *significantly worse* (more than 2x slower) on these non-contiguous tensors than even standard `einsum` attention.
+**Action:** Always call `.contiguous()` on `q`, `k`, `v` after `rearrange` and `chunk` before passing them to `F.scaled_dot_product_attention` to ensure it uses the fast, optimized paths (like Flash Attention).
