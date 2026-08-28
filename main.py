@@ -175,11 +175,10 @@ class Attention1D(nn.Module):
         qkv = self.to_qkv(x_norm).chunk(3, dim=1) # (b, h*d, n), (b, h*d, n), (b, h*d, n)
 
         # Rearrange for multi-head attention: b (h d) n -> b h n d
-        q, k, v = map(lambda t: rearrange(t, 'b (h d) n -> b h n d', h=self.heads), qkv)
+        q, k, v = map(lambda t: rearrange(t, 'b (h d) n -> b h n d', h=self.heads).contiguous(), qkv)
 
-        dots = torch.einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
-        attn = dots.softmax(dim=-1)
-        out = torch.einsum('b h i j, b h j d -> b h i d', attn, v)
+        # Use efficient scaled dot product attention
+        out = F.scaled_dot_product_attention(q, k, v)
 
         # Rearrange back: b h n d -> b (h d) n
         out = rearrange(out, 'b h n d -> b (h d) n')
