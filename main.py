@@ -8,13 +8,14 @@ import time
 import os
 import glob
 from functools import partial
+import copy
 from einops import rearrange, reduce # Using einops for clearer tensor manipulations
 
 # --- Configuration ---
 # Data Loading Config
 DATA_DIR = "./dataset/USE" # Directory containing .txt files
 TRAIN_BATCH_SIZE = 16       # Diffusion models can be memory intensive
-TRAIN_SEQ_LEN = 128         # Sequence length for training
+TRAIN_SEQ_LEN = 256         # Sequence length for training (increased for smarter model)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Model Config
@@ -36,6 +37,7 @@ BETA_START = 0.0001         # For linear schedule
 BETA_END = 0.02             # For linear schedule
 
 # Training Config
+EMA_DECAY = 0.999 # EMA Decay rate
 INITIAL_LEARNING_RATE = 5e-5 # Adjusted learning rate
 NUM_EPOCHS = 20 # Diffusion models often require more epochs
 LOG_INTERVAL = 50 # Log loss every N effective optimizer steps
@@ -48,6 +50,19 @@ TEST_INTERVAL_OPTIMIZER_STEPS = 10000 # Generate a sample every N effective opti
 
 
 # --- Helper Functions & Modules ---
+
+class EMA(nn.Module):
+    def __init__(self, model, decay=0.999):
+        super().__init__()
+        self.decay = decay
+        self.model = copy.deepcopy(model).eval()
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+    @torch.no_grad()
+    def update(self, model):
+        for ema_param, param in zip(self.model.parameters(), model.parameters()):
+            ema_param.data.mul_(self.decay).add_(param.data, alpha=1 - self.decay)
 
 def exists(x):
     return x is not None
@@ -138,7 +153,7 @@ class ResnetBlock1D(nn.Module):
         if exists(scale_shift):
             scale, shift = scale_shift
             h = h * (scale + 1) + shift
-        
+
         h = self.dropout(h)
         h = self.block2(h)
         return h + self.res_conv(x)
@@ -158,14 +173,14 @@ class Attention1D(nn.Module):
         b, c, n = x.shape
         x_norm = self.norm(x)
         qkv = self.to_qkv(x_norm).chunk(3, dim=1) # (b, h*d, n), (b, h*d, n), (b, h*d, n)
-        
+
         # Rearrange for multi-head attention: b (h d) n -> b h n d
         q, k, v = map(lambda t: rearrange(t, 'b (h d) n -> b h n d', h=self.heads), qkv)
 
         dots = torch.einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
         attn = dots.softmax(dim=-1)
         out = torch.einsum('b h i j, b h j d -> b h i d', attn, v)
-        
+
         # Rearrange back: b h n d -> b (h d) n
         out = rearrange(out, 'b h n d -> b (h d) n')
         return self.to_out(out) + x # Add residual connection
@@ -252,7 +267,7 @@ class UNet1D(nn.Module):
                 attn_klass(dim_out),
                 Upsample1D(dim_out, dim_in) if not is_last else nn.Conv1d(dim_out, dim_in, 3, padding=1)
             ]))
-        
+
         # --- Final Convolution ---
         self.final_res_block = block_klass(model_dim * 2, model_dim) # model_dim from init_conv skip + model_dim from last upsample
         self.final_conv = nn.Conv1d(model_dim, self.out_dim, 1)
@@ -289,7 +304,7 @@ class UNet1D(nn.Module):
             h = resnet_block2(h, t_emb)
             h = attention(h)
             h = upsample(h)
-        
+
         h = torch.cat((h, skip_connections.pop()), dim=1) # Final skip from init_conv
         h = self.final_res_block(h, t_emb)
         out = self.final_conv(h) # (batch, out_dim, seq_len)
@@ -394,7 +409,7 @@ class GaussianDiffusion(nn.Module):
         for i in reversed(range(0, self.num_timesteps)):
             current_t_tensor = torch.full((batch_size,), i, device=DEVICE, dtype=torch.long)
             x_t_embed = self.p_sample(x_t_embed, current_t_tensor, i)
-        
+
         # x_t_embed is now approximately x_0_embed
         if self.clip_denoised: # Optional: clip to [-1, 1] if embeddings are normalized
              x_t_embed = torch.clamp(x_t_embed, -1., 1.)
@@ -409,7 +424,7 @@ class GaussianDiffusion(nn.Module):
             extract(self.sqrt_one_minus_alphas_cumprod, t, x_start_embed.shape) * noise
         )
 
-    def p_losses(self, x_start_embed, t, noise=None): # x_start_embed: (batch, seq_len, embed_dim)
+    def p_losses(self, x_start_embed, t, noise=None, x_bytes=None, to_logits_fn=None): # x_start_embed: (batch, seq_len, embed_dim)
         """Calculate loss: model predicts noise."""
         noise = default(noise, lambda: torch.randn_like(x_start_embed))
 
@@ -422,14 +437,22 @@ class GaussianDiffusion(nn.Module):
             loss = F.mse_loss(noise, predicted_noise)
         else:
             raise ValueError(f'unknown loss type {self.loss_type}')
+
+        if x_bytes is not None and to_logits_fn is not None:
+            # Predict x0 to compute cross entropy loss and ground the embeddings
+            x0_pred = self.predict_start_from_noise(x_t_embed, t, predicted_noise)
+            logits = to_logits_fn(x0_pred)
+            ce_loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), x_bytes.reshape(-1))
+            loss = loss + 0.1 * ce_loss
+
         return loss
 
-    def forward(self, x_start_embed): # x_start_embed: (batch, seq_len, embed_dim)
+    def forward(self, x_start_embed, x_bytes=None, to_logits_fn=None): # x_start_embed: (batch, seq_len, embed_dim)
         """Training forward pass: returns loss."""
         batch_size = x_start_embed.shape[0]
         # Sample random timesteps
         t = torch.randint(0, self.num_timesteps, (batch_size,), device=x_start_embed.device).long()
-        return self.p_losses(x_start_embed, t)
+        return self.p_losses(x_start_embed, t, x_bytes=x_bytes, to_logits_fn=to_logits_fn)
 
 
 # --- Data Loading ---
@@ -464,7 +487,7 @@ class TextDataset(Dataset):
     def __init__(self, tokenized_text_bytes: list[int], seq_len: int, pad_token_id=0):
         self.seq_len = seq_len
         self.pad_token_id = pad_token_id
-        
+
         # Ensure data is at least seq_len long by padding if necessary
         if len(tokenized_text_bytes) < seq_len:
             padding_needed = seq_len - len(tokenized_text_bytes)
@@ -472,12 +495,12 @@ class TextDataset(Dataset):
             print(f"Warning: Initial data was shorter than seq_len. Padded to {seq_len} bytes.")
 
         self.data = torch.tensor(tokenized_text_bytes, dtype=torch.long)
-        
+
         # Calculate number of sequences, ensuring we can form at least one full sequence
         if self.data.size(0) >= self.seq_len:
             self.num_sequences = self.data.size(0) // self.seq_len
         else: # Should not happen due to padding above, but as a safeguard
-            self.num_sequences = 0 
+            self.num_sequences = 0
             print(f"Error: Text length ({self.data.size(0)}) is less than seq_len ({self.seq_len}) even after padding. No sequences will be generated.")
 
     def __len__(self):
@@ -504,7 +527,7 @@ class ByteDiffusionLM(nn.Module):
     ):
         super().__init__()
         self.byte_embedder = ByteEmbedding(vocab_size, byte_embed_dim)
-        
+
         self.denoise_unet = UNet1D(
             model_dim=model_dim,
             out_dim=byte_embed_dim, # U-Net predicts noise of the same dim as embeddings
@@ -512,7 +535,7 @@ class ByteDiffusionLM(nn.Module):
             dim_mults=unet_dim_mults
             # Other U-Net params like attn_heads, resnet_groups are taken from global config or defaults
         )
-        
+
         self.gaussian_diffusion = GaussianDiffusion(
             denoise_model=self.denoise_unet,
             seq_len=seq_len,
@@ -520,30 +543,31 @@ class ByteDiffusionLM(nn.Module):
             beta_schedule_fn=beta_schedule,
             loss_type=loss_type
         )
-        
-        # To project final denoised embeddings (x0_embed) back to byte logits
-        self.to_logits = nn.Linear(byte_embed_dim, vocab_size)
+
+    def get_logits(self, x):
+        # Tie projection weights to the embedding matrix weights
+        return F.linear(x, self.byte_embedder.embedding.weight)
 
     def forward(self, x_bytes): # x_bytes: (batch, seq_len) integer tokens
         """Training forward pass: returns loss."""
         x_start_embed = self.byte_embedder(x_bytes) # (batch, seq_len, embed_dim)
-        loss = self.gaussian_diffusion(x_start_embed) # Diffusion process handles noising and loss
+        # Pass x_bytes and get_logits to compute CE loss
+        loss = self.gaussian_diffusion(x_start_embed, x_bytes=x_bytes, to_logits_fn=self.get_logits)
         return loss
 
     @torch.no_grad()
     def sample(self, batch_size=1):
         """Generate samples by denoising from T to 0."""
         self.eval()
-        # Shape for initial noise: (batch_size, seq_len, byte_embed_dim)
+        # Shape for initial noise: (batch_size, seq_len, self.byte_embedder.embedding.embedding_dim)
         shape = (batch_size, self.gaussian_diffusion.seq_len, self.byte_embedder.embedding.embedding_dim)
-        
+
         # p_sample_loop returns the predicted x0_embed
         x0_embed_predicted = self.gaussian_diffusion.p_sample_loop(shape)
-        
-        # Project embeddings to logits
-        logits = self.to_logits(x0_embed_predicted) # (batch, seq_len, vocab_size)
+
+        # Project embeddings to logits using tied weights
+        logits = self.get_logits(x0_embed_predicted) # (batch, seq_len, vocab_size)
         sampled_byte_ids = torch.argmax(logits, dim=-1) # (batch, seq_len)
-        # self.train() # Keep in eval mode if called during eval; switch back in training loop
         return sampled_byte_ids
 
 
@@ -570,15 +594,15 @@ if __name__ == '__main__':
             print(f"Dataset creation resulted in 0 sequences. Text length: {len(tokenized_data_bytes)}, TRAIN_SEQ_LEN: {TRAIN_SEQ_LEN}")
             print("Exiting. Please check your data or TRAIN_SEQ_LEN.")
             exit()
-        
-        num_workers_val = 4 if DEVICE == 'cuda' else 0 
+
+        num_workers_val = 4 if DEVICE == 'cuda' else 0
         train_loader = DataLoader(train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True, drop_last=True, num_workers=num_workers_val, pin_memory=True if DEVICE=='cuda' else False)
         print(f"Dataset created with {len(train_dataset)} sequences of {TRAIN_SEQ_LEN} bytes.")
         print(f"DataLoader created with {len(train_loader)} batches per epoch.")
-        
+
         optimizer_steps_per_epoch = len(train_loader) // GRADIENT_ACCUMULATION_STEPS
         if len(train_loader) % GRADIENT_ACCUMULATION_STEPS != 0:
-             optimizer_steps_per_epoch +=1 
+             optimizer_steps_per_epoch +=1
         COSINE_LR_T_MAX = optimizer_steps_per_epoch * NUM_EPOCHS
         print(f"CosineAnnealingLR T_max set to: {COSINE_LR_T_MAX} (optimizer steps)")
 
@@ -597,9 +621,13 @@ if __name__ == '__main__':
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model parameters: {num_params:,}")
 
+    ema = EMA(model, decay=EMA_DECAY).to(DEVICE)
+
     optimizer = optim.AdamW(model.parameters(), lr=INITIAL_LEARNING_RATE)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=COSINE_LR_T_MAX, eta_min=COSINE_LR_ETA_MIN)
-    
+
+    scaler = torch.amp.GradScaler(enabled=(DEVICE == "cuda"))
+
     start_epoch = 0
     completed_optimizer_steps_total = 0 # To track total optimizer steps for mid-epoch testing
 
@@ -608,15 +636,19 @@ if __name__ == '__main__':
         checkpoint = torch.load(MODEL_SAVE_PATH, map_location=DEVICE)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict']) 
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        if 'scaler_state_dict' in checkpoint:
+            scaler.load_state_dict(checkpoint['scaler_state_dict'])
+        if 'ema_state_dict' in checkpoint:
+            ema.load_state_dict(checkpoint['ema_state_dict'])
         start_epoch = checkpoint['epoch'] + 1
         completed_optimizer_steps_total = checkpoint.get('completed_optimizer_steps_total', 0) # Load if exists
         print(f"Resumed from epoch {start_epoch}. Optimizer and Scheduler states loaded. Completed optimizer steps: {completed_optimizer_steps_total}")
 
 
     print(f"\n--- Starting Training ({NUM_EPOCHS} epochs) ---")
-    
-    total_start_time = time.time() 
+
+    total_start_time = time.time()
 
     for epoch in range(start_epoch, NUM_EPOCHS):
         model.train()
@@ -631,26 +663,34 @@ if __name__ == '__main__':
                 optimizer.zero_grad()
 
             x_bytes = x_bytes.to(DEVICE)
-            
-            loss = model(x_bytes)
-            loss = loss / GRADIENT_ACCUMULATION_STEPS 
-            loss.backward()
-            
+
+            with torch.amp.autocast('cuda', enabled=(DEVICE == "cuda")):
+                loss = model(x_bytes)
+                loss = loss / GRADIENT_ACCUMULATION_STEPS
+
+            scaler.scale(loss).backward()
+
             if (batch_idx + 1) % GRADIENT_ACCUMULATION_STEPS == 0 or (batch_idx + 1) == len(train_loader):
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0) 
-                optimizer.step()
-                optimizer.zero_grad() 
-                scheduler.step() 
-                
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+                scaler.step(optimizer)
+                scaler.update()
+
+                optimizer.zero_grad()
+                scheduler.step()
+
+                ema.update(model)
+
                 completed_optimizer_steps_total += 1
                 current_epoch_optimizer_steps +=1
 
                 # --- Mid-Epoch Testing ---
                 if TEST_INTERVAL_OPTIMIZER_STEPS > 0 and completed_optimizer_steps_total % TEST_INTERVAL_OPTIMIZER_STEPS == 0:
                     print(f"\n--- Testing model at Epoch {epoch+1}, Optimizer Step {completed_optimizer_steps_total} ---")
-                    model.eval()
+                    ema.model.eval()
                     with torch.no_grad():
-                        generated_byte_sequence_tensor = model.sample(batch_size=1)
+                        generated_byte_sequence_tensor = ema.model.sample(batch_size=1)
                         generated_bytes_list = generated_byte_sequence_tensor[0].cpu().tolist()
                         generated_text = tokenizer.decode(generated_bytes_list)
                         print(f"Sample: \"{generated_text[:100]}...\"") # Print a snippet
@@ -658,14 +698,14 @@ if __name__ == '__main__':
                     print("--- End Test Sample ---\n")
 
 
-            epoch_total_loss += loss.item() * GRADIENT_ACCUMULATION_STEPS 
-            
+            epoch_total_loss += loss.item() * GRADIENT_ACCUMULATION_STEPS
+
             # Logging based on effective optimizer steps
             if (batch_idx + 1) % GRADIENT_ACCUMULATION_STEPS == 0 or (batch_idx + 1) == len(train_loader):
                 if current_epoch_optimizer_steps % LOG_INTERVAL == 0 or (batch_idx + 1) == len(train_loader) : # Check if it's a logging step
-                    current_loss_for_log = loss.item() * GRADIENT_ACCUMULATION_STEPS 
+                    current_loss_for_log = loss.item() * GRADIENT_ACCUMULATION_STEPS
                     print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Opt_Step_Epoch [{current_epoch_optimizer_steps}/{optimizer_steps_per_epoch}], TotalOptStep [{completed_optimizer_steps_total}], LR: {scheduler.get_last_lr()[0]:.2e}, Loss: {current_loss_for_log:.4f}")
-        
+
         avg_epoch_loss = epoch_total_loss / (len(train_loader) / GRADIENT_ACCUMULATION_STEPS) # Avg loss per optimizer step
         epoch_end_time = time.time()
         print(f"--- Epoch {epoch+1} Finished. Avg Loss: {avg_epoch_loss:.4f} (Took {epoch_end_time - epoch_start_time:.2f} seconds) ---")
@@ -675,8 +715,10 @@ if __name__ == '__main__':
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
+                'ema_state_dict': ema.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(), 
+                'scheduler_state_dict': scheduler.state_dict(),
+                'scaler_state_dict': scaler.state_dict(),
                 'loss': avg_epoch_loss,
                 'completed_optimizer_steps_total': completed_optimizer_steps_total # Save total optimizer steps
             }, MODEL_SAVE_PATH)
@@ -686,17 +728,16 @@ if __name__ == '__main__':
     print(f"--- Training Finished (Total time: {total_training_time:.2f} seconds) ---")
 
     print("\n--- Running Final Generation Example (Byte-Level Diffusion) ---")
-    model.eval()
-    print(f"Generating {TRAIN_SEQ_LEN} bytes from noise...")
-    
+    ema.model.eval()
+    print(f"Generating {TRAIN_SEQ_LEN} bytes from noise using EMA model...")
+
     num_samples_to_generate = 3
     for i in range(num_samples_to_generate):
-        generated_byte_sequence_tensor = model.sample(batch_size=1) 
+        generated_byte_sequence_tensor = ema.model.sample(batch_size=1)
         generated_bytes_list = generated_byte_sequence_tensor[0].cpu().tolist()
-        
+
         generated_text = tokenizer.decode(generated_bytes_list)
         print(f"\n--- Generated Sample {i+1} ---")
         print(generated_text)
-        print(f"Raw bytes: {generated_bytes_list[:30]}...") 
+        print(f"Raw bytes: {generated_bytes_list[:30]}...")
         print("--- End Sample ---")
-
