@@ -279,15 +279,16 @@ class UNet1D(nn.Module):
         t_emb = self.time_mlp(time)
 
         h = self.init_conv(x)
-        skip_connections = [h.clone()] # Store initial conv output for final skip
+        # Bolt optimization: removed unnecessary .clone() since PyTorch out-of-place ops return new tensors
+        skip_connections = [h] # Store initial conv output for final skip
 
         # Downsampling
         for resnet_block1, resnet_block2, attention, downsample in self.downs:
             h = resnet_block1(h, t_emb)
-            skip_connections.append(h.clone())
+            skip_connections.append(h)
             h = resnet_block2(h, t_emb)
             h = attention(h)
-            skip_connections.append(h.clone())
+            skip_connections.append(h)
             h = downsample(h)
 
         # Bottleneck
