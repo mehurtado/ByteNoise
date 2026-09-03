@@ -98,13 +98,15 @@ class SinusoidalPosEmb(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
+        # Bolt optimization: pre-calculate inverse frequencies for time embeddings
+        half_dim = dim // 2
+        embeddings = math.log(10000) / (half_dim - 1)
+        inv_freq = torch.exp(torch.arange(half_dim, dtype=torch.float32) * -embeddings)
+        self.register_buffer('inv_freq', inv_freq)
 
     def forward(self, time): # time: (batch_size,)
-        device = time.device
-        half_dim = self.dim // 2
-        embeddings = math.log(10000) / (half_dim - 1)
-        embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
-        embeddings = time[:, None] * embeddings[None, :]
+        # time: (batch_size,)
+        embeddings = time[:, None].float() * self.inv_freq[None, :]
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         if self.dim % 2 == 1: # zero pad if dim is odd
             embeddings = F.pad(embeddings, (0,1))
@@ -163,6 +165,7 @@ class Attention1D(nn.Module):
         super().__init__()
         self.scale = dim_head ** -0.5
         self.heads = heads
+        self.dim_head = dim_head
         hidden_dim = dim_head * heads
 
         self.norm = nn.GroupNorm(groups, dim)
@@ -172,16 +175,20 @@ class Attention1D(nn.Module):
     def forward(self, x): # x: (batch, channels, seq_len)
         b, c, n = x.shape
         x_norm = self.norm(x)
-        qkv = self.to_qkv(x_norm).chunk(3, dim=1) # (b, h*d, n), (b, h*d, n), (b, h*d, n)
 
-        # Rearrange for multi-head attention: b (h d) n -> b h n d
-        q, k, v = map(lambda t: rearrange(t, 'b (h d) n -> b h n d', h=self.heads).contiguous(), qkv)
+        # Bolt optimization: remove map/lambda and einops string parsing for performance
+        q, k, v = self.to_qkv(x_norm).chunk(3, dim=1)
+
+        # Reshape to (b, h, d, n) then transpose to (b, h, n, d)
+        q = q.view(b, self.heads, self.dim_head, n).transpose(2, 3).contiguous()
+        k = k.view(b, self.heads, self.dim_head, n).transpose(2, 3).contiguous()
+        v = v.view(b, self.heads, self.dim_head, n).transpose(2, 3).contiguous()
 
         # Use efficient scaled dot product attention
         out = F.scaled_dot_product_attention(q, k, v)
 
-        # Rearrange back: b h n d -> b (h d) n
-        out = rearrange(out, 'b h n d -> b (h d) n')
+        # Transpose back to (b, h, d, n) and reshape to (b, h*d, n)
+        out = out.transpose(2, 3).reshape(b, -1, n)
         return self.to_out(out) + x # Add residual connection
 
 class Downsample1D(nn.Module):
@@ -362,6 +369,9 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer('posterior_mean_coef1', betas * torch.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod))
         self.register_buffer('posterior_mean_coef2', (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod))
 
+        # Bolt optimization: Pre-calculate sqrt(1 / alpha_t)
+        self.register_buffer('sqrt_recip_alphas', torch.sqrt(1.0 / alphas))
+
     def predict_start_from_noise(self, x_t, t, noise):
         """Predict x0 from x_t and predicted noise (epsilon)."""
         return (
@@ -385,7 +395,7 @@ class GaussianDiffusion(nn.Module):
         betas_t = extract(self.betas, t, x_t_embed.shape)
         sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x_t_embed.shape)
         # Corrected: alpha_t = 1 - beta_t
-        sqrt_recip_alphas_t = extract(torch.sqrt(1.0 / (1.0 - self.betas)), t, x_t_embed.shape)
+        sqrt_recip_alphas_t = extract(self.sqrt_recip_alphas, t, x_t_embed.shape)
 
 
         # Equation 11 in DDPM: model predicts noise

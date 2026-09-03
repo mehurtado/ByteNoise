@@ -1,6 +1,7 @@
-## 2026-08-28 - SDPA Requires Contiguous Tensors from Chunk/Rearrange
-**Learning:** When using `torch.nn.functional.scaled_dot_product_attention` (SDPA), if the `q`, `k`, and `v` tensors are created from chunking and rearranging a single `qkv` tensor, they are non-contiguous in memory. SDPA performs *significantly worse* (more than 2x slower) on these non-contiguous tensors than even standard `einsum` attention.
-**Action:** Always call `.contiguous()` on `q`, `k`, `v` after `rearrange` and `chunk` before passing them to `F.scaled_dot_product_attention` to ensure it uses the fast, optimized paths (like Flash Attention).
-## 2024-05-18 - PyTorch Skip Connections Anti-Pattern
-**Learning:** In PyTorch, applying `.clone()` to tensors before adding them to a skip connection list (e.g., `skip_connections.append(h.clone())`) is a major anti-pattern unless the tensor `h` will be modified *in-place* before the next use. PyTorch out-of-place operations (like convolutions or norms) return entirely new tensor objects. Redundantly cloning simply forces the GPU to allocate extra VRAM and waste bandwidth on unnecessary copies, significantly increasing peak memory usage.
-**Action:** Always check if skip connection tensors are modified in-place downstream. If they are not (which is the case 99% of the time with standard `nn.Modules`), store the reference directly (`skip_connections.append(h)`) to save VRAM and improve memory throughput.
+## 2024-05-24 - Einops string parsing overhead
+**Learning:** In highly called functions like multi-head attention forward passes within this codebase's U-Net architecture, the `einops.rearrange` function introduces significant string parsing and map/lambda overhead when restructuring tensors.
+**Action:** Replace `einops.rearrange` with native PyTorch `.view()`, `.transpose()`, and `.contiguous()` in critical training loops like `Attention1D`.
+
+## 2024-05-24 - Precalculate static tensors
+**Learning:** `torch.exp(torch.arange...)` calculations in `SinusoidalPosEmb` and `torch.sqrt` calculations in `GaussianDiffusion` are currently recomputed repeatedly but are functionally static for the lifetime of the model.
+**Action:** Precompute these values and register them as buffers during object initialization using `self.register_buffer`.
