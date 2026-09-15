@@ -175,13 +175,16 @@ class Attention1D(nn.Module):
         qkv = self.to_qkv(x_norm).chunk(3, dim=1) # (b, h*d, n), (b, h*d, n), (b, h*d, n)
 
         # Rearrange for multi-head attention: b (h d) n -> b h n d
-        q, k, v = map(lambda t: rearrange(t, 'b (h d) n -> b h n d', h=self.heads).contiguous(), qkv)
+        # Bolt Optimization: Use native view/transpose instead of einops.rearrange for better performance
+        # while keeping .contiguous() for optimized SDPA
+        q, k, v = map(lambda t: t.view(b, self.heads, -1, n).transpose(2, 3).contiguous(), qkv)
 
         # Use efficient scaled dot product attention
         out = F.scaled_dot_product_attention(q, k, v)
 
         # Rearrange back: b h n d -> b (h d) n
-        out = rearrange(out, 'b h n d -> b (h d) n')
+        # Bolt Optimization: Use native transpose/reshape instead of einops.rearrange
+        out = out.transpose(2, 3).reshape(b, -1, n)
         return self.to_out(out) + x # Add residual connection
 
 class Downsample1D(nn.Module):
