@@ -4,3 +4,6 @@
 ## 2024-05-18 - PyTorch Skip Connections Anti-Pattern
 **Learning:** In PyTorch, applying `.clone()` to tensors before adding them to a skip connection list (e.g., `skip_connections.append(h.clone())`) is a major anti-pattern unless the tensor `h` will be modified *in-place* before the next use. PyTorch out-of-place operations (like convolutions or norms) return entirely new tensor objects. Redundantly cloning simply forces the GPU to allocate extra VRAM and waste bandwidth on unnecessary copies, significantly increasing peak memory usage.
 **Action:** Always check if skip connection tensors are modified in-place downstream. If they are not (which is the case 99% of the time with standard `nn.Modules`), store the reference directly (`skip_connections.append(h)`) to save VRAM and improve memory throughput.
+## 2024-05-20 - einops overhead in inner loops
+**Learning:** While `einops.rearrange` is excellent for readability, it introduces measurable python string parsing overhead when called in tight inner loops like Attention mechanisms.
+**Action:** In performance-critical sections, use native PyTorch `.view().transpose()` or `.reshape().transpose()` instead of `einops.rearrange`, ensuring `.contiguous()` is maintained for memory layout if required by downstream operations like SDPA.
