@@ -141,6 +141,12 @@ PRESETS.update({
                    max_updates=2000, data="tasks-v1", ema_decay=0.99, save_interval=500, eval_interval=250),
     "rec_task": _lm("rec_task", "recurrent", d_model=256, n_layers=4, n_heads=4, seq_len=128, batch_size=64, grad_accum_steps=1,
                     max_updates=2000, data="tasks-v1", ema_decay=0.99, save_interval=500, eval_interval=250),
+    "tf_nat_a": _lm("tf_nat_a", "transformer", d_model=384, n_layers=12, n_heads=6, seq_len=512, batch_size=32, grad_accum_steps=2,
+                    max_updates=100000, max_seconds=900, data="natural-v1", eval_interval=200, save_interval=200),
+    "tf_nat_b": _lm("tf_nat_b", "transformer", d_model=512, n_layers=8, n_heads=8, seq_len=512, batch_size=32, grad_accum_steps=2,
+                    max_updates=100000, max_seconds=900, data="natural-v1", eval_interval=200, save_interval=200),
+    "tf_nat_c": _lm("tf_nat_c", "transformer", d_model=640, n_layers=10, n_heads=10, seq_len=512, batch_size=32, grad_accum_steps=2,
+                    learning_rate=6e-4, max_updates=100000, max_seconds=900, data="natural-v1", eval_interval=200, save_interval=200),
     "tf_small": _lm("tf_small", "transformer", d_model=512, n_layers=8, n_heads=8, seq_len=512),
 })
 

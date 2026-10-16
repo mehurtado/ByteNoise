@@ -96,13 +96,16 @@ def bucket_losses(t, per_sample, num_timesteps, num_buckets):
     return sums, counts
 
 
-def lr_lambda(warmup, total, lr, lr_min):
+def lr_lambda(warmup, total, lr, lr_min, elapsed=None, max_seconds=0.0):
+    """Warmup then cosine. With a wall-clock budget the decay follows whichever of update or time progress is further along."""
     floor = lr_min / lr
 
     def f(step):  # step = number of completed scheduler steps
         if warmup and step < warmup:
             return (step + 1) / warmup
         prog = min(1.0, (step - warmup) / max(1, total - warmup))
+        if max_seconds and elapsed is not None:
+            prog = max(prog, min(1.0, elapsed() / max_seconds))
         return floor + (1 - floor) * 0.5 * (1 + math.cos(math.pi * prog))
     return f
 
@@ -305,7 +308,9 @@ def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None,
     model = build_model(cfg).to(device)
     ema = EMA(model, decay=t.ema_decay, warmup=t.ema_warmup).to(device)
     optimizer = make_optimizer(model, t)
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda(t.warmup_updates, t.max_updates, t.learning_rate, t.lr_min))
+    clock = {"start": time.time()}
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda(t.warmup_updates, t.max_updates, t.learning_rate, t.lr_min,
+                                                                 lambda: time.time() - clock["start"], t.max_seconds))
     ac_dev, ac_dtype, use_scaler = amp_settings(t.precision, device)
     scaler = torch.amp.GradScaler(enabled=use_scaler)
     num_params = sum(p.numel() for p in model.parameters())
@@ -370,6 +375,7 @@ def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None,
         return row
 
     start_time = time.time() - progress["elapsed"]
+    clock["start"] = start_time
     params = list(model.parameters())
     seq = cfg.model.seq_len if cfg.arch == "diffusion" else cfg.lm.seq_len
     last_eval = [None]
