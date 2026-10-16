@@ -46,6 +46,7 @@ class DiffusionConfig:
     loss_type: str = "l2"
     ce_weight: float = 0.1
     clip_denoised: bool = True
+    x0_rescale: bool = False          # sampler-only: rescale x0_hat to mean embedding norm each step
 
 
 @dataclass(frozen=True)
@@ -102,7 +103,8 @@ class Config:
     def architecture_hash(self):
         full = self.to_dict()
         if self.arch == "diffusion":
-            parts = {"model": full["model"], "diffusion": full["diffusion"]}
+            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale"}  # sampler-only; keeps old hashes
+            parts = {"model": full["model"], "diffusion": diff}
         else:
             parts = {"arch": self.arch, "lm": full["lm"]}
         blob = json.dumps(parts, sort_keys=True)

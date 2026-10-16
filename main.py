@@ -301,7 +301,8 @@ class GaussianDiffusion(nn.Module):
         beta_end=0.02,
         loss_type='l2',
         clip_denoised=True,
-        ce_weight=0.1
+        ce_weight=0.1,
+        x0_rescale=False
     ):
         super().__init__()
         self.denoise_model = denoise_model
@@ -310,6 +311,7 @@ class GaussianDiffusion(nn.Module):
         self.clip_denoised = clip_denoised
         self.loss_type = loss_type
         self.ce_weight = ce_weight
+        self.x0_rescale = x0_rescale
 
         if beta_schedule_fn == 'linear':
             betas = linear_beta_schedule(num_timesteps, beta_start, beta_end)
@@ -359,8 +361,22 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
     @torch.no_grad()
-    def p_sample(self, x_t_embed, t, t_index): # t is tensor, t_index is scalar
-        """Denoise one step from x_t to x_{t-1}."""
+    def p_sample(self, x_t_embed, t, t_index, target_norm=None): # t is tensor, t_index is scalar
+        """Denoise one step from x_t to x_{t-1}.
+
+        With x0_rescale: predict x0, rescale every position vector to target_norm (mean real embedding norm),
+        then sample from the q(x_{t-1} | x_t, x0_hat) posterior. target_norm is required in that mode.
+        """
+        if self.x0_rescale:
+            if target_norm is None:
+                raise ValueError('x0_rescale sampling needs target_norm (mean embedding norm)')
+            x0_hat = self.predict_start_from_noise(x_t_embed, t, self.denoise_model(x_t_embed, t))
+            x0_hat = x0_hat * (target_norm / x0_hat.norm(dim=-1, keepdim=True).clamp(min=1e-8))
+            mean, _, log_var = self.q_posterior(x0_hat, x_t_embed, t)
+            if t_index == 0:
+                return mean
+            return mean + (0.5 * log_var).exp() * torch.randn_like(x_t_embed)
+
         betas_t = extract(self.betas, t, x_t_embed.shape)
         sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x_t_embed.shape)
         # Corrected: alpha_t = 1 - beta_t
@@ -379,7 +395,7 @@ class GaussianDiffusion(nn.Module):
             return model_mean + torch.sqrt(posterior_variance_t) * noise
 
     @torch.no_grad()
-    def p_sample_loop(self, shape):
+    def p_sample_loop(self, shape, target_norm=None):
         """Generate samples by denoising from T to 0."""
         batch_size = shape[0]
         # Start with random noise
@@ -388,10 +404,10 @@ class GaussianDiffusion(nn.Module):
 
         for i in reversed(range(0, self.num_timesteps)):
             current_t_tensor = torch.full((batch_size,), i, device=device, dtype=torch.long)
-            x_t_embed = self.p_sample(x_t_embed, current_t_tensor, i)
+            x_t_embed = self.p_sample(x_t_embed, current_t_tensor, i, target_norm)
 
         # x_t_embed is now approximately x_0_embed
-        if self.clip_denoised: # Optional: clip to [-1, 1] if embeddings are normalized
+        if self.clip_denoised and not self.x0_rescale: # Optional: clip to [-1, 1] if embeddings are normalized
              x_t_embed = torch.clamp(x_t_embed, -1., 1.)
         return x_t_embed
 
@@ -508,6 +524,7 @@ class ByteDiffusionLM(nn.Module):
             loss_type=d.loss_type,
             clip_denoised=d.clip_denoised,
             ce_weight=d.ce_weight,
+            x0_rescale=d.x0_rescale,
         )
 
     def get_logits(self, x):
@@ -518,11 +535,14 @@ class ByteDiffusionLM(nn.Module):
         x_start_embed = self.byte_embedder(x_bytes)
         return self.gaussian_diffusion(x_start_embed, x_bytes=x_bytes, to_logits_fn=self.get_logits, t=t, noise=noise)
 
+    def mean_embed_norm(self):
+        return self.byte_embedder.embedding.weight.detach().norm(dim=-1).mean().item()
+
     @torch.no_grad()
     def sample(self, batch_size=1):
         self.eval()
         shape = (batch_size, self.gaussian_diffusion.seq_len, self.byte_embedder.embedding.embedding_dim)
-        x0_embed_predicted = self.gaussian_diffusion.p_sample_loop(shape)
+        x0_embed_predicted = self.gaussian_diffusion.p_sample_loop(shape, target_norm=self.mean_embed_norm())
         logits = self.get_logits(x0_embed_predicted)
         return torch.argmax(logits, dim=-1)
 

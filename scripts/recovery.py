@@ -20,6 +20,7 @@ def main():
     model, cfg = train.load_model_from_run(a.run, a.which, dev)
     gd = model.gaussian_diffusion
     gd.clip_denoised = False
+    tn = model.mean_embed_norm()
     val = data.load_split(a.data, "val")
     g = torch.Generator().manual_seed(a.seed)
     starts = torch.randint(0, len(val) - a.len, (a.n,), generator=g)
@@ -30,7 +31,7 @@ def main():
         for t0 in a.ts:
             xt = gd.q_sample(x0, torch.full((a.n,), t0, device=dev, dtype=torch.long))
             for i in reversed(range(t0 + 1)):
-                xt = gd.p_sample(xt, torch.full((a.n,), i, device=dev, dtype=torch.long), i)
+                xt = gd.p_sample(xt, torch.full((a.n,), i, device=dev, dtype=torch.long), i, tn)
             acc = (model.get_logits(xt).argmax(-1) == x).float().mean().item()
             print(f"t={t0}: recovery={acc:.3f}", flush=True)
 
