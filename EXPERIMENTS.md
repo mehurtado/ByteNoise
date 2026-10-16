@@ -49,3 +49,11 @@ Diagnosis (runs/diff_base_s0, 1500 updates, ce_weight 0.1):
 Cost: U-Net 931 s, 698 MB peak; birnn 1044 s, 3350 MB peak (fp32 log-space scans).
 
 Verdict: both learn line format, neither computes answers (copy/recall/rules) in 8000 updates. The bidirectional recurrent denoiser is not better at free-running generation despite a 3x lower noise loss (mostly low-t buckets), and costs 5x VRAM, so shared refinement loops on it are not justified yet. Limitations: one seed, no tuning, birnn not param-matched, no positional signal. Not run: natural-v1 diffusion, correct reduced-step DDIM for the speed goal (eta=0 variant exists in scripts/sample_variants.py but gave no quality gain).
+
+### 24k-update U-Net (runs/diff_ce0_24k_s0, same recipe, 2755 s, val noise loss 0.0154)
+alphabet 0.998, valid-prefix 0.924, fully-correct lines 0.009 (4/458; pattern 1/74, copy 1/89, recall 0/114, rule 2/175). 3x more training raised format validity (0.757 -> 0.924) but not answer correctness (0.004 -> 0.009). Lines look like the tasks (`c:rcrlr|dcrrd`, `v:sort:vai=tvn`) but payloads are inconsistent with their own prefixes, i.e. the model learns local statistics, not the cross-position dependencies.
+
+## Final summary (diffusion direction)
+- Fixed: training/eval reporting, sampler collapse (x0 blow-up + wrong final clip; `x0_rescale`), CE term demoted (ce_weight 0 was better at high noise). Reproducible CLI, data (tasks-v1, natural-v1), validity/recovery scripts, 64+ tests.
+- Learned: bytes-in-alphabet and line format; NOT answers to copy/recall/rules, with U-Net (1.5k/8k/24k updates) or bidirectional recurrent denoiser (8k). Autoregressive models on the same tasks do reach ~0.98+ in-distribution (E1), so the gap is specific to this diffusion formulation at this scale.
+- Not done / recommended next: conditional (prompt-infilling) generation rather than unconditional line generation; a cross-position mechanism with global receptive field (attention in the denoiser) before more training; natural-v1 diffusion runs; DDIM only after quality exists. Single seed throughout.
