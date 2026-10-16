@@ -19,5 +19,15 @@ class Schedule(unittest.TestCase):
         self.assertAlmostEqual(f2(10), 0.0)
 
 
+class SetOverrides(unittest.TestCase):
+    def test_diffusion_and_train_keys(self):
+        from config import get_preset
+        cfg, tov = T.apply_set_items(get_preset("compact"), ["diffusion.ce_weight=0.0", "train.batch_size=7", "learning_rate=0.5"])
+        self.assertEqual(cfg.diffusion.ce_weight, 0.0)
+        self.assertEqual(tov, {"batch_size": 7, "learning_rate": 0.5})
+        with self.assertRaises(ValueError):
+            T.apply_set_items(get_preset("compact"), ["diffusion.nope=1"])
+
+
 if __name__ == "__main__":
     unittest.main()

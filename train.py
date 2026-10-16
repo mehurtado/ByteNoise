@@ -530,6 +530,26 @@ def generate(run_dir=None, checkpoint=None, preset=None, which="ema", seeds=(0,)
 
 # --- CLI ---
 
+def _coerce(cur, v):
+    return (v.lower() in ("1", "true")) if isinstance(cur, bool) else type(cur)(v)
+
+
+def apply_set_items(cfg, items):
+    """Parse --set items. `diffusion.<key>=v` is applied to cfg.diffusion; others are returned as TrainConfig overrides."""
+    import dataclasses
+    tov = {}
+    for item in items:
+        k, v = item.split("=", 1)
+        if k.startswith("diffusion."):
+            k = k[len("diffusion."):]
+            if not hasattr(cfg.diffusion, k):
+                raise ValueError(f"unknown diffusion key: {k}")
+            cfg = dataclasses.replace(cfg, diffusion=dataclasses.replace(cfg.diffusion, **{k: _coerce(getattr(cfg.diffusion, k), v)}))
+        else:
+            k = k.removeprefix("train.")
+            tov[k] = _coerce(getattr(cfg.train, k), v)
+    return cfg, tov
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="ByteNoise training, evaluation and generation")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -568,11 +588,8 @@ def main(argv=None):
                 cfg = get_preset(args.preset)
                 ov = {k: v for k, v in (("max_updates", args.max_updates), ("max_seconds", args.max_seconds), ("seed", args.seed),
                                         ("data", args.data), ("precision", args.precision)) if v is not None}
-                for item in args.set:
-                    k, v = item.split("=", 1)
-                    k = k.removeprefix("train.")
-                    cur = getattr(cfg.train, k)
-                    ov[k] = (v.lower() in ("1", "true")) if isinstance(cur, bool) else type(cur)(v)
+                cfg, tov = apply_set_items(cfg, args.set)
+                ov.update(tov)
                 cfg = validate(override(cfg, **ov))
                 run_dir = args.run_dir or os.path.join("runs", f"{cfg.name}-{datetime.now():%Y%m%d_%H%M%S}")
                 run_training(cfg, run_dir, "fresh", args.device)
