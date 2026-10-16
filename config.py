@@ -15,6 +15,10 @@ class ModelConfig:
     attn_heads: int = 6
     dropout: float = 0.1
     seq_len: int = 256
+    denoiser: str = "unet"           # "unet" | "birnn"
+    rnn_layers: int = 8               # birnn only: block count (width = model_dim)
+    rnn_conv: int = 7                 # birnn only: centered depthwise conv width (odd)
+    rnn_ffn_mult: float = 2.667       # birnn only
 
     @property
     def attn_dim_head(self):
@@ -104,7 +108,10 @@ class Config:
         full = self.to_dict()
         if self.arch == "diffusion":
             diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale"}  # sampler-only; keeps old hashes
-            parts = {"model": full["model"], "diffusion": diff}
+            mod = full["model"]
+            if self.model.denoiser == "unet":  # birnn-only fields don't exist for U-Net configs; keeps old hashes
+                mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult")}
+            parts = {"model": mod, "diffusion": diff}
         else:
             parts = {"arch": self.arch, "lm": full["lm"]}
         blob = json.dumps(parts, sort_keys=True)
@@ -116,6 +123,10 @@ PRESETS = {
     "compact": Config(
         name="compact",
         model=ModelConfig(byte_embed_dim=64, model_dim=96, attn_heads=4),
+    ),
+    "birnn": Config(
+        name="birnn",
+        model=ModelConfig(byte_embed_dim=64, model_dim=256, denoiser="birnn", rnn_layers=8),
     ),
     "debug": Config(
         name="debug",
@@ -185,6 +196,22 @@ def validate(cfg):
     if t.precision not in ("fp32", "bf16", "fp16"):
         errors.append(f"unknown precision {t.precision!r}")
     if cfg.arch != "diffusion":
+        if t.grad_accum_steps < 1 or t.batch_size < 1 or t.max_updates < 1:
+            errors.append("batch_size, grad_accum_steps and max_updates must be >= 1")
+        if errors:
+            raise ValueError("invalid config:\n  - " + "\n  - ".join(errors))
+        return cfg
+    if m.denoiser not in ("unet", "birnn"):
+        errors.append(f"unknown denoiser {m.denoiser!r}")
+    if m.denoiser == "birnn":
+        if m.rnn_layers < 1 or m.rnn_conv < 1 or m.rnn_conv % 2 == 0:
+            errors.append("birnn needs rnn_layers >= 1 and an odd rnn_conv")
+        if m.model_dim % 2 != 0:
+            errors.append("birnn model_dim must be even (sinusoidal time embedding)")
+        if d.beta_schedule not in ("linear", "cosine"):
+            errors.append(f"unknown beta_schedule {d.beta_schedule!r}")
+        if d.loss_type not in ("l1", "l2"):
+            errors.append(f"unknown loss_type {d.loss_type!r}")
         if t.grad_accum_steps < 1 or t.batch_size < 1 or t.max_updates < 1:
             errors.append("batch_size, grad_accum_steps and max_updates must be >= 1")
         if errors:

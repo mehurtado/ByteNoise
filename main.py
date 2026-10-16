@@ -10,6 +10,7 @@ import copy
 from einops import rearrange, reduce # Using einops for clearer tensor manipulations
 
 from config import Config, ModelConfig, DiffusionConfig, validate
+from models_lm import RMSNorm, GatedFFN, scan_parallel, log_positive_activation
 
 
 # --- Helper Functions & Modules ---
@@ -288,6 +289,64 @@ class UNet1D(nn.Module):
         return rearrange(out, 'b c n -> b n c')
 
 
+class BiMixer(nn.Module):
+    """Bidirectional gated linear recurrence: centered depthwise conv, forward scan + scan over the flipped sequence
+    (separate gates per direction), both gated by one output gate, concatenated and projected. Non-causal."""
+    def __init__(self, d, conv_kernel):
+        super().__init__()
+        self.in_proj = nn.Linear(d, 2 * d, bias=False)  # value path + output gate
+        self.conv = nn.Conv1d(d, d, conv_kernel, groups=d, padding=conv_kernel // 2)  # centered: sees past and future
+        self.gates_f = nn.Linear(d, 2 * d)
+        self.gates_b = nn.Linear(d, 2 * d)
+        self.out_proj = nn.Linear(2 * d, d, bias=False)
+
+    @staticmethod
+    def _scan(gates, u):
+        cand_logit, z_logit = gates(u).chunk(2, dim=-1)
+        return scan_parallel(z_logit, log_positive_activation(cand_logit.float()))
+
+    def forward(self, x):
+        u, gate = self.in_proj(x).chunk(2, dim=-1)
+        u = F.silu(self.conv(u.transpose(1, 2)).transpose(1, 2))
+        hf = self._scan(self.gates_f, u)
+        hb = self._scan(self.gates_b, u.flip(1)).flip(1)
+        g = F.silu(gate)
+        return self.out_proj(torch.cat((hf.to(x.dtype), hb.to(x.dtype)), dim=-1) * g.repeat(1, 1, 2))
+
+
+class BiRNNBlock(nn.Module):
+    def __init__(self, d, conv_kernel, ffn_mult, dropout):
+        super().__init__()
+        self.norm1, self.norm2 = RMSNorm(d), RMSNorm(d)
+        self.mixer = BiMixer(d, conv_kernel)
+        self.ffn = GatedFFN(d, ffn_mult, dropout)
+        self.film = nn.Linear(d, 4 * d)  # per-block timestep conditioning: scale/shift before mixer and before FFN
+
+    def forward(self, x, t_emb):
+        s1, b1, s2, b2 = self.film(t_emb)[:, None].chunk(4, dim=-1)
+        x = x + self.mixer(self.norm1(x) * (1 + s1) + b1)
+        return x + self.ffn(self.norm2(x) * (1 + s2) + b2)
+
+
+class BiRNNDenoiser(nn.Module):
+    """Bidirectional recurrent noise predictor; same interface as UNet1D: (b, n, embed), (b,) -> (b, n, embed)."""
+    def __init__(self, model_dim, in_embed_dim, n_layers, conv_kernel, ffn_mult, dropout, out_dim=None):
+        super().__init__()
+        self.time_mlp = nn.Sequential(SinusoidalPosEmb(model_dim), nn.Linear(model_dim, model_dim), nn.GELU(),
+                                      nn.Linear(model_dim, model_dim))
+        self.inp = nn.Linear(in_embed_dim, model_dim)
+        self.blocks = nn.ModuleList([BiRNNBlock(model_dim, conv_kernel, ffn_mult, dropout) for _ in range(n_layers)])
+        self.final_norm = RMSNorm(model_dim)
+        self.out = nn.Linear(model_dim, default(out_dim, in_embed_dim))
+
+    def forward(self, x_embed, time):
+        t_emb = self.time_mlp(time)
+        h = self.inp(x_embed) + t_emb[:, None]
+        for blk in self.blocks:
+            h = blk(h, t_emb)
+        return self.out(self.final_norm(h))
+
+
 # --- Gaussian Diffusion Process ---
 class GaussianDiffusion(nn.Module):
     def __init__(
@@ -502,17 +561,21 @@ class ByteDiffusionLM(nn.Module):
         self.cfg = cfg
         self.byte_embedder = ByteEmbedding(m.vocab_size, m.byte_embed_dim)
 
-        self.denoise_unet = UNet1D(
-            model_dim=m.model_dim,
-            in_embed_dim=m.byte_embed_dim,
-            out_dim=m.byte_embed_dim,
-            dim_mults=m.dim_mults,
-            time_emb_dim_mult=m.time_emb_mult,
-            resnet_groups=m.resnet_groups,
-            attn_heads=m.attn_heads,
-            attn_dim_head=m.attn_dim_head,
-            dropout=m.dropout,
-        )
+        if m.denoiser == "birnn":  # attribute keeps the name denoise_unet so state_dict keys stay uniform
+            self.denoise_unet = BiRNNDenoiser(m.model_dim, m.byte_embed_dim, m.rnn_layers, m.rnn_conv, m.rnn_ffn_mult,
+                                              m.dropout, out_dim=m.byte_embed_dim)
+        else:
+            self.denoise_unet = UNet1D(
+                model_dim=m.model_dim,
+                in_embed_dim=m.byte_embed_dim,
+                out_dim=m.byte_embed_dim,
+                dim_mults=m.dim_mults,
+                time_emb_dim_mult=m.time_emb_mult,
+                resnet_groups=m.resnet_groups,
+                attn_heads=m.attn_heads,
+                attn_dim_head=m.attn_dim_head,
+                dropout=m.dropout,
+            )
 
         self.gaussian_diffusion = GaussianDiffusion(
             denoise_model=self.denoise_unet,
