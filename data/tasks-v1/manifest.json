@@ -1,0 +1,48 @@
+{
+  "name": "tasks-v1",
+  "kind": "controlled_tasks",
+  "seed": 1234,
+  "tasks": [
+    "pattern",
+    "copy",
+    "recall",
+    "rule"
+  ],
+  "regimes": {
+    "pattern": [
+      "id",
+      "unseen_period",
+      "long"
+    ],
+    "copy": [
+      "id",
+      "long"
+    ],
+    "recall": [
+      "id",
+      "long"
+    ],
+    "rule": [
+      "id",
+      "unseen_combo",
+      "long"
+    ]
+  },
+  "split_policy": "independent generator seeds per split; eval examples fresh, in-distribution ones exclude training lines",
+  "splits": {
+    "train": {
+      "bytes": 8000000,
+      "sha256": "d20e18729da4140ec86e997ebc1b97cb707e8c944d4274ec8af1fd72cccb0e9e"
+    },
+    "val": {
+      "bytes": 500000,
+      "sha256": "5209f57897d2406bf580648acceb80bdeab7d5b1f7af1ff40dcddf10e9a03441"
+    },
+    "test": {
+      "bytes": 500000,
+      "sha256": "ab1f5e15ae2ca7ebecfe837a52e89148d71d7fecae460498ddf2d2e3c3be7346"
+    }
+  },
+  "created": "2026-10-15 23:08:26",
+  "code_revision": "4db8096"
+}

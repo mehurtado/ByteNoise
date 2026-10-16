@@ -4,13 +4,21 @@ import time
 import psutil
 import torch
 
-from main import ByteDiffusionLM, TRAIN_BATCH_SIZE, TRAIN_SEQ_LEN
+import sys
+
+from config import get_preset
+from train import build_model, window_len
+
+PRESET = sys.argv[1] if len(sys.argv) > 1 else "compact"
+CFG = get_preset(PRESET)
+TRAIN_BATCH_SIZE = CFG.train.batch_size
+TRAIN_SEQ_LEN = window_len(CFG)
 
 
 def run(dtype_name, repeats=5, steps=10):
     dev = "cuda"
     torch.manual_seed(0)
-    model = ByteDiffusionLM(seq_len=TRAIN_SEQ_LEN).to(dev)
+    model = build_model(CFG).to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=5e-5)
     use_amp = dtype_name != "fp32"
     amp_dtype = {"fp16": torch.float16, "bf16": torch.bfloat16}.get(dtype_name)
@@ -20,7 +28,7 @@ def run(dtype_name, repeats=5, steps=10):
     def step():
         opt.zero_grad(set_to_none=True)
         with torch.autocast("cuda", dtype=amp_dtype, enabled=use_amp):
-            loss = model(x)
+            loss, _ = model(x)
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
         gn = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

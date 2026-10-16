@@ -1,0 +1,22 @@
+{
+  "name": "dummy-v1",
+  "kind": "dummy_smoke_test",
+  "source": "C:\\Users\\mehur\\ByteNoise\\dataset\\USE",
+  "split_policy": "contiguous 90/5/5 of repeated dummy text; NOT leakage-free, smoke test only",
+  "splits": {
+    "train": {
+      "bytes": 104310,
+      "sha256": "5278106c88e217ed96b5b1b31d241d01ad04a08ca86bde0fcc8ea88527e362fd"
+    },
+    "val": {
+      "bytes": 5795,
+      "sha256": "46065d991e1a535447383a31526414b851d36134fdd50f321fc873aabf0cd4af"
+    },
+    "test": {
+      "bytes": 5795,
+      "sha256": "46065d991e1a535447383a31526414b851d36134fdd50f321fc873aabf0cd4af"
+    }
+  },
+  "created": "2026-10-15 23:08:22",
+  "code_revision": "4db8096"
+}

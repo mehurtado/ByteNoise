@@ -147,6 +147,10 @@ PRESETS.update({
                     max_updates=100000, max_seconds=900, data="natural-v1", eval_interval=200, save_interval=200),
     "tf_nat_c": _lm("tf_nat_c", "transformer", d_model=640, n_layers=10, n_heads=10, seq_len=512, batch_size=32, grad_accum_steps=2,
                     learning_rate=6e-4, max_updates=100000, max_seconds=900, data="natural-v1", eval_interval=200, save_interval=200),
+    **{name: _lm(name, "recurrent", d_model=d, n_layers=n, n_heads=8, loops=l, seq_len=512, batch_size=16, grad_accum_steps=4,
+                 max_updates=100000, max_seconds=900, data="natural-v1", eval_interval=200, save_interval=200)
+       for name, d, n, l in [("rec_nat_L8", 512, 8, 1), ("rec_nat_s2x1", 512, 2, 1), ("rec_nat_s2x2", 512, 2, 2),
+                             ("rec_nat_s2x4", 512, 2, 4), ("rec_nat_sep4", 512, 4, 1), ("rec_nat_wide", 1024, 2, 4)]},
     "tf_small": _lm("tf_small", "transformer", d_model=512, n_layers=8, n_heads=8, seq_len=512),
 })
 

@@ -1,0 +1,449 @@
+{
+  "name": "natural-v1",
+  "kind": "natural_text",
+  "source": "Project Gutenberg (public domain), https://www.gutenberg.org",
+  "split_policy": "document-level; rank by sha256('bytenoise-split-<id>'); 10% test, 10% val, rest train; paragraph-level exact dedup (whitespace/case-normalised, >=60 chars) so no paragraph appears in two splits",
+  "documents": [
+    {
+      "id": 10,
+      "title": "The King James Version of the Bible",
+      "author": "",
+      "split": "train",
+      "chars": 4332583
+    },
+    {
+      "id": 11,
+      "title": "Alice's Adventures in Wonderland",
+      "author": "Lewis Carroll",
+      "split": "train",
+      "chars": 144599
+    },
+    {
+      "id": 16,
+      "title": "Peter Pan",
+      "author": "J. M. Barrie",
+      "split": "train",
+      "chars": 255583
+    },
+    {
+      "id": 35,
+      "title": "The Time Machine",
+      "author": "H. G. Wells",
+      "split": "train",
+      "chars": 179698
+    },
+    {
+      "id": 36,
+      "title": "The war of the worlds",
+      "author": "H. G. Wells",
+      "split": "train",
+      "chars": 337423
+    },
+    {
+      "id": 41,
+      "title": "The Legend of Sleepy Hollow",
+      "author": "Washington Irving",
+      "split": "train",
+      "chars": 69758
+    },
+    {
+      "id": 43,
+      "title": "The strange case of Dr. Jekyll and Mr. Hyde",
+      "author": "Robert Louis Stevenson",
+      "split": "val",
+      "chars": 138814
+    },
+    {
+      "id": 45,
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery",
+      "split": "val",
+      "chars": 561143
+    },
+    {
+      "id": 46,
+      "title": "A Christmas Carol in Prose; Being a Ghost Story of Christmas",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 158414
+    },
+    {
+      "id": 55,
+      "title": "The Wonderful Wizard of Oz",
+      "author": "L. Frank Baum",
+      "split": "train",
+      "chars": 207817
+    },
+    {
+      "id": 64,
+      "title": "The gods of Mars",
+      "author": "Edgar Rice Burroughs",
+      "split": "train",
+      "chars": 450442
+    },
+    {
+      "id": 74,
+      "title": "The Adventures of Tom Sawyer, Complete",
+      "author": "Mark Twain",
+      "split": "train",
+      "chars": 392732
+    },
+    {
+      "id": 76,
+      "title": "Adventures of Huckleberry Finn",
+      "author": "Mark Twain",
+      "split": "test",
+      "chars": 571052
+    },
+    {
+      "id": 84,
+      "title": "Frankenstein; or, the modern prometheus",
+      "author": "Mary Wollstonecraft Shelley",
+      "split": "val",
+      "chars": 419336
+    },
+    {
+      "id": 98,
+      "title": "A Tale of Two Cities",
+      "author": "Charles Dickens",
+      "split": "test",
+      "chars": 757604
+    },
+    {
+      "id": 103,
+      "title": "Around the World in Eighty Days",
+      "author": "Jules Verne",
+      "split": "train",
+      "chars": 369188
+    },
+    {
+      "id": 108,
+      "title": "The Return of Sherlock Holmes",
+      "author": "Arthur Conan Doyle",
+      "split": "train",
+      "chars": 673677
+    },
+    {
+      "id": 120,
+      "title": "Treasure Island",
+      "author": "Robert Louis Stevenson",
+      "split": "train",
+      "chars": 364519
+    },
+    {
+      "id": 135,
+      "title": "Les Mis\u00e9rables",
+      "author": "Victor Hugo",
+      "split": "train",
+      "chars": 3231377
+    },
+    {
+      "id": 158,
+      "title": "Emma",
+      "author": "Jane Austen",
+      "split": "train",
+      "chars": 880424
+    },
+    {
+      "id": 161,
+      "title": "Sense and Sensibility",
+      "author": "Jane Austen",
+      "split": "train",
+      "chars": 670674
+    },
+    {
+      "id": 174,
+      "title": "The Picture of Dorian Gray",
+      "author": "Oscar Wilde",
+      "split": "train",
+      "chars": 429312
+    },
+    {
+      "id": 205,
+      "title": "Walden, and On The Duty Of Civil Disobedience",
+      "author": "Henry David Thoreau",
+      "split": "train",
+      "chars": 634786
+    },
+    {
+      "id": 215,
+      "title": "The call of the wild",
+      "author": "Jack London",
+      "split": "test",
+      "chars": 175590
+    },
+    {
+      "id": 219,
+      "title": "Heart of Darkness",
+      "author": "Joseph Conrad",
+      "split": "train",
+      "chars": 209894
+    },
+    {
+      "id": 244,
+      "title": "A Study in Scarlet",
+      "author": "Arthur Conan Doyle",
+      "split": "train",
+      "chars": 239426
+    },
+    {
+      "id": 345,
+      "title": "Dracula",
+      "author": "Bram Stoker",
+      "split": "train",
+      "chars": 845889
+    },
+    {
+      "id": 514,
+      "title": "Little Women",
+      "author": "Louisa May Alcott",
+      "split": "train",
+      "chars": 1007151
+    },
+    {
+      "id": 521,
+      "title": "The Life and Adventures of Robinson Crusoe",
+      "author": "Daniel Defoe",
+      "split": "train",
+      "chars": 621520
+    },
+    {
+      "id": 730,
+      "title": "Oliver Twist",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 893160
+    },
+    {
+      "id": 766,
+      "title": "David Copperfield",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 1934726
+    },
+    {
+      "id": 768,
+      "title": "Wuthering Heights",
+      "author": "Emily Bront\u00eb",
+      "split": "train",
+      "chars": 645605
+    },
+    {
+      "id": 829,
+      "title": "Gulliver's Travels into Several Remote Nations of the World",
+      "author": "Jonathan Swift",
+      "split": "val",
+      "chars": 582410
+    },
+    {
+      "id": 996,
+      "title": "Don Quixote",
+      "author": "Miguel de Cervantes Saavedra",
+      "split": "train",
+      "chars": 2299289
+    },
+    {
+      "id": 1023,
+      "title": "Bleak House",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 1939456
+    },
+    {
+      "id": 1184,
+      "title": "The Count of Monte Cristo",
+      "author": "Alexandre Dumas",
+      "split": "test",
+      "chars": 2627256
+    },
+    {
+      "id": 1232,
+      "title": "The Prince",
+      "author": "Niccol\u00f2 Machiavelli",
+      "split": "train",
+      "chars": 282635
+    },
+    {
+      "id": 1257,
+      "title": "The three musketeers",
+      "author": "Alexandre Dumas",
+      "split": "train",
+      "chars": 1297963
+    },
+    {
+      "id": 1260,
+      "title": "Jane Eyre: An Autobiography",
+      "author": "Charlotte Bront\u00eb",
+      "split": "train",
+      "chars": 1022379
+    },
+    {
+      "id": 1322,
+      "title": "Leaves of Grass",
+      "author": "Walt Whitman",
+      "split": "test",
+      "chars": 738051
+    },
+    {
+      "id": 1342,
+      "title": "Pride and Prejudice",
+      "author": "Jane Austen",
+      "split": "train",
+      "chars": 728713
+    },
+    {
+      "id": 1399,
+      "title": "Anna Karenina",
+      "author": "graf Leo Tolstoy",
+      "split": "train",
+      "chars": 1964765
+    },
+    {
+      "id": 1400,
+      "title": "Great Expectations",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 994616
+    },
+    {
+      "id": 1497,
+      "title": "The Republic",
+      "author": "Plato",
+      "split": "train",
+      "chars": 1194443
+    },
+    {
+      "id": 1661,
+      "title": "The Adventures of Sherlock Holmes",
+      "author": "Arthur Conan Doyle",
+      "split": "train",
+      "chars": 562202
+    },
+    {
+      "id": 1952,
+      "title": "The Yellow Wallpaper",
+      "author": "Charlotte Perkins Gilman",
+      "split": "val",
+      "chars": 31497
+    },
+    {
+      "id": 2009,
+      "title": "The Origin of Species by Means of Natural Selection",
+      "author": "Charles Darwin",
+      "split": "train",
+      "chars": 1257090
+    },
+    {
+      "id": 2148,
+      "title": "The Works of Edgar Allan Poe \u2014 Volume 2",
+      "author": "Edgar Allan Poe",
+      "split": "train",
+      "chars": 602107
+    },
+    {
+      "id": 2554,
+      "title": "Crime and Punishment",
+      "author": "Fyodor Dostoyevsky",
+      "split": "train",
+      "chars": 1135108
+    },
+    {
+      "id": 2591,
+      "title": "Grimms' Fairy Tales",
+      "author": "Jacob Grimm",
+      "split": "val",
+      "chars": 520810
+    },
+    {
+      "id": 2600,
+      "title": "War and Peace",
+      "author": "graf Leo Tolstoy",
+      "split": "train",
+      "chars": 3208272
+    },
+    {
+      "id": 2701,
+      "title": "Moby Dick; Or, The Whale",
+      "author": "Herman Melville",
+      "split": "train",
+      "chars": 1218973
+    },
+    {
+      "id": 2814,
+      "title": "Dubliners",
+      "author": "James Joyce",
+      "split": "train",
+      "chars": 369786
+    },
+    {
+      "id": 3207,
+      "title": "Leviathan",
+      "author": "Thomas Hobbes",
+      "split": "train",
+      "chars": 1212462
+    },
+    {
+      "id": 3825,
+      "title": "Pygmalion",
+      "author": "Bernard Shaw",
+      "split": "test",
+      "chars": 188306
+    },
+    {
+      "id": 4300,
+      "title": "Ulysses",
+      "author": "James Joyce",
+      "split": "train",
+      "chars": 1519707
+    },
+    {
+      "id": 5200,
+      "title": "Metamorphosis",
+      "author": "Franz Kafka",
+      "split": "train",
+      "chars": 118415
+    }
+  ],
+  "skipped": [
+    {
+      "id": 1080,
+      "reason": "too short"
+    },
+    {
+      "id": 5740,
+      "reason": "download failed: HTTPError"
+    },
+    {
+      "id": 19033,
+      "reason": "duplicate title \"Alice's Adventures in Wonderland\""
+    }
+  ],
+  "dedup": {
+    "paragraphs_in": {
+      "train": 160404,
+      "val": 4926,
+      "test": 24533
+    },
+    "dropped_duplicate": {
+      "train": 73,
+      "val": 25,
+      "test": 1
+    }
+  },
+  "splits": {
+    "train": {
+      "bytes": 43738030,
+      "sha256": "a07182c852b99f44ff898b784ce39e135a0741fcbdde828f2bacf7325659586d"
+    },
+    "val": {
+      "bytes": 2281541,
+      "sha256": "c258c430e982f91e2071b8a452e53b4138e48ec5ba4b998a4dba6949104540a1"
+    },
+    "test": {
+      "bytes": 5175949,
+      "sha256": "eb8d3c1588e05822fa2ba2ef123c2b42eea0d14964b382f8825d14f473b93af4"
+    }
+  },
+  "created": "2026-10-15 23:09:30",
+  "code_revision": "4db8096"
+}
