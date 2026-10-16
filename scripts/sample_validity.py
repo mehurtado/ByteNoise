@@ -49,6 +49,7 @@ def split_lines(b):
 def stats(samples):
     tot = alpha = 0
     lines, pre, ok = 0, 0, 0
+    kinds = {k: [0, 0] for k in ("pattern", "copy", "recall", "rule")}  # [lines with that prefix, fully correct]
     for b in samples:
         tot += len(b)
         alpha += sum(c in ALPHA for c in b)
@@ -56,8 +57,13 @@ def stats(samples):
         for ln in complete:
             lines += 1
             pre += ln.startswith(PREFIXES)
-            ok += check_line(ln)
-    return dict(alpha=alpha / max(tot, 1), prefix=pre / max(lines, 1), correct=ok / max(lines, 1), lines=lines)
+            good = check_line(ln)
+            ok += good
+            k = {"p:": "pattern", "c:": "copy", "r:": "recall", "v:": "rule"}.get(ln[:2])
+            if k:
+                kinds[k][0] += 1
+                kinds[k][1] += good
+    return dict(alpha=alpha / max(tot, 1), prefix=pre / max(lines, 1), correct=ok / max(lines, 1), lines=lines, kinds=kinds)
 
 
 def validate_checkers(data_name, n_bytes=200000):
@@ -105,6 +111,7 @@ def main():
     name = os.path.basename(os.path.normpath(a.run))
     print(f"{'run':<16}{'alpha_frac':>11}{'prefix_ok':>10}{'line_correct':>13}{'lines':>6}{'x0@999_alpha':>14}")
     print(f"{name:<16}{s['alpha']:>11.3f}{s['prefix']:>10.3f}{s['correct']:>13.3f}{s['lines']:>6}{p:>14.3f}")
+    print("per-task (correct/with-prefix): " + "  ".join(f"{k}={c}/{n}" for k, (n, c) in s["kinds"].items()))
     for i in range(3):
         print(f"sample{i}: {samples[i][:100]!r}")
     print(f"x0@999 : {bytes(pb[0].tolist())[:100]!r}")
