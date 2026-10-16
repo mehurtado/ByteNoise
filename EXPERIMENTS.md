@@ -29,3 +29,23 @@ Findings: both learn the in-distribution rules. Attention wins associative recal
 | Recurrent d512 L8 (`rec_nat_L8`) | 27.5M | 1318 | 43.2M | 3.6 GB | 1.626 |
 
 Single seed; the 0.011 bpb gap between the best Transformer and the recurrent model is not established as real. The 49M model loses on this budget because it processes about 4x fewer bytes. These are autoregressive models, so bpb is not comparable to diffusion losses.
+
+## Diffusion track (2026-10-16) - tasks-v1, compact U-Net vs bidirectional recurrent denoiser
+
+All single-seed, short runs (bs32, lr 3e-4, fp32). Validity = scripts/sample_validity.py (32 EMA samples, task-grammar checkers; 100% on real val lines).
+
+Diagnosis (runs/diff_base_s0, 1500 updates, ce_weight 0.1):
+- Training CE (x0 reconstruction at all t) is spiky and dominated by t>=750 (CE ~58); val noise loss 0.726.
+- Sampler is correct (reverse chain from real data noised to t<=400 recovers ~100%); free-running samples were garbage (0% valid).
+- Cause of garbage: x0_hat = (x_t - sqrt(1-ab) eps)/sqrt(ab) blows up at high t (norm 20-37 vs real ~7.8); the final clamp to [-1,1] is also wrong (embedding absmax ~4.2). One x0 step at t=999 decodes plausibly (96% in-alphabet); the 1000-step chain collapsed.
+- ce_weight=0 helped a little (recovery t=600/800: 0.614/0.028 -> 0.756/0.298). In-loop per-position rescale of x0_hat to the mean embedding norm (config `x0_rescale`, default off) was the best sampler fix; DDIM eta=0 variant no better (scripts/sample_variants.py).
+
+| run | updates | alphabet | valid-prefix | fully-correct lines | recovery t=200/400/600/800/999 |
+|---|---|---|---|---|---|
+| ce0x (U-Net 14.4M, rescale in eval script) | 1500 | 0.99 | 0.48 | 0 | 1.0/0.986/0.756/0.298/0.02 |
+| diff_ce0_long_s0 (U-Net) | 8000 | 0.999 | 0.757 | 2/449 | 0.937/0.927/0.844/0.463/0.032 |
+| birnn_ce0_long_s0 (bidir recurrent 10.7M) | 8000 | 1.000 | 0.526 | 0/605 | 1.0/1.0/0.992/0.567/0.037 |
+
+Cost: U-Net 931 s, 698 MB peak; birnn 1044 s, 3350 MB peak (fp32 log-space scans).
+
+Verdict: both learn line format, neither computes answers (copy/recall/rules) in 8000 updates. The bidirectional recurrent denoiser is not better at free-running generation despite a 3x lower noise loss (mostly low-t buckets), and costs 5x VRAM, so shared refinement loops on it are not justified yet. Limitations: one seed, no tuning, birnn not param-matched, no positional signal. Not run: natural-v1 diffusion, correct reduced-step DDIM for the speed goal (eta=0 variant exists in scripts/sample_variants.py but gave no quality gain).

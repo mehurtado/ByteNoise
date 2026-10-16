@@ -20,6 +20,9 @@ This is a research prototype. Avoid a framework rewrite, broad test matrices, pr
 
 Goal: most capable model on RTX 4060 Ti 8GB (see user's 10-step plan: GPU env -> reproducible runs -> trustworthy training/eval -> data+eval suite -> Transformer baseline -> parallel recurrent model -> shared loops -> bounded diffusion -> staged selection -> deliver report). Python: `.venv\Scripts\python`. Use bf16 (fp32 spills VRAM and is ~23x slower). Subagents: sonnet/haiku only, never opus. No Co-Authored-By lines in commits.
 
+## Diffusion status (latest, supersedes 'Next' below)
+Done: loss diagnosis, sampler fix (x0_rescale), U-Net vs birnn comparison - see EXPERIMENTS.md 'Diffusion track'. Open: models learn format not answers; try longer training / positional signal / conditioning only if the user wants to continue; DDIM speed item and shared loops deferred (not justified by evidence).
+
 ## Done
 - Step 1 GPU env (ENVIRONMENT.md, gpu_smoke.py - gpu_smoke.py still uses old diffusion globals, needs presets update).
 - Step 2/3 reproducible runs, corrected training loop, tests (tests/, 58 passing): config.py presets, train.py (train/resume/generate/eval CLI), checkpoints validated.
