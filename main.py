@@ -361,9 +361,13 @@ class GaussianDiffusion(nn.Module):
         loss_type='l2',
         clip_denoised=True,
         ce_weight=0.1,
-        x0_rescale=False
+        x0_rescale=False,
+        cond_prompt=False,
+        max_clean_prefix=128
     ):
         super().__init__()
+        self.cond_prompt = cond_prompt
+        self.max_clean_prefix = max_clean_prefix
         self.denoise_model = denoise_model
         self.seq_len = seq_len
         self.num_timesteps = num_timesteps
@@ -402,6 +406,18 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer('posterior_mean_coef1', betas * torch.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod))
         self.register_buffer('posterior_mean_coef2', (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod))
 
+    def denoise(self, x_t, t, clean_mask=None):
+        """Call the denoiser; with cond_prompt a 1-channel clean-position mask (b, n) is appended to the input."""
+        if self.cond_prompt:
+            m = torch.zeros(x_t.shape[:2], device=x_t.device, dtype=x_t.dtype) if clean_mask is None else clean_mask.to(x_t.dtype)
+            x_t = torch.cat((x_t, m.unsqueeze(-1)), dim=-1)
+        return self.denoise_model(x_t, t)
+
+    def sample_clean_mask(self, batch_size, device):
+        """Random clean prefix per window, length uniform in [0, max_clean_prefix]."""
+        n = torch.randint(0, self.max_clean_prefix + 1, (batch_size, 1), device=device)
+        return torch.arange(self.seq_len, device=device)[None] < n
+
     def predict_start_from_noise(self, x_t, t, noise):
         """Predict x0 from x_t and predicted noise (epsilon)."""
         return (
@@ -429,7 +445,7 @@ class GaussianDiffusion(nn.Module):
         if self.x0_rescale:
             if target_norm is None:
                 raise ValueError('x0_rescale sampling needs target_norm (mean embedding norm)')
-            x0_hat = self.predict_start_from_noise(x_t_embed, t, self.denoise_model(x_t_embed, t))
+            x0_hat = self.predict_start_from_noise(x_t_embed, t, self.denoise(x_t_embed, t))
             x0_hat = x0_hat * (target_norm / x0_hat.norm(dim=-1, keepdim=True).clamp(min=1e-8))
             mean, _, log_var = self.q_posterior(x0_hat, x_t_embed, t)
             if t_index == 0:
@@ -443,7 +459,7 @@ class GaussianDiffusion(nn.Module):
 
 
         # Equation 11 in DDPM: model predicts noise
-        predicted_noise = self.denoise_model(x_t_embed, t)
+        predicted_noise = self.denoise(x_t_embed, t)
         model_mean = sqrt_recip_alphas_t * (x_t_embed - betas_t * predicted_noise / sqrt_one_minus_alphas_cumprod_t)
 
         if t_index == 0:
@@ -479,19 +495,32 @@ class GaussianDiffusion(nn.Module):
             extract(self.sqrt_one_minus_alphas_cumprod, t, x_start_embed.shape) * noise
         )
 
-    def p_losses(self, x_start_embed, t, noise=None, x_bytes=None, to_logits_fn=None):
-        """Returns (loss, stats). stats holds detached per-component diagnostics."""
+    def p_losses(self, x_start_embed, t, noise=None, x_bytes=None, to_logits_fn=None, clean_mask=None):
+        """Returns (loss, stats). stats holds detached per-component diagnostics.
+
+        clean_mask (b, n) bool (cond_prompt only): True positions are fed clean, are not noised and carry no loss."""
         noise = default(noise, lambda: torch.randn_like(x_start_embed))
+        if clean_mask is None and self.cond_prompt and self.training:
+            clean_mask = self.sample_clean_mask(x_start_embed.shape[0], x_start_embed.device)
+        if not self.cond_prompt:
+            clean_mask = None
 
         x_t_embed = self.q_sample(x_start_embed, t, noise=noise)
-        predicted_noise = self.denoise_model(x_t_embed, t)
+        if clean_mask is not None:
+            x_t_embed = torch.where(clean_mask.unsqueeze(-1), x_start_embed, x_t_embed)
+        predicted_noise = self.denoise(x_t_embed, t, clean_mask)
 
         if self.loss_type == 'l1':
-            per_sample = (noise - predicted_noise).abs().mean(dim=(1, 2))
+            err = (noise - predicted_noise).abs().mean(dim=-1)
         elif self.loss_type == 'l2':
-            per_sample = (noise - predicted_noise).pow(2).mean(dim=(1, 2))
+            err = (noise - predicted_noise).pow(2).mean(dim=-1)
         else:
             raise ValueError(f'unknown loss type {self.loss_type}')
+        if clean_mask is None:
+            w = torch.ones_like(err)
+        else:
+            w = (~clean_mask).to(err.dtype)
+        per_sample = (err * w).sum(1) / w.sum(1).clamp(min=1)
         noise_loss = per_sample.mean()
         loss = noise_loss
 
@@ -500,7 +529,8 @@ class GaussianDiffusion(nn.Module):
         if x_bytes is not None and to_logits_fn is not None:
             x0_pred = self.predict_start_from_noise(x_t_embed, t, predicted_noise)
             logits = to_logits_fn(x0_pred)
-            ce_loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), x_bytes.reshape(-1))
+            ce = F.cross_entropy(logits.reshape(-1, logits.size(-1)), x_bytes.reshape(-1), reduction='none').view(err.shape)
+            ce_loss = (ce * w).sum() / w.sum().clamp(min=1)
             loss = loss + self.ce_weight * ce_loss
             stats['ce_loss'] = ce_loss.detach()
             stats['x0_pred_norm'] = x0_pred.detach().norm(dim=-1).mean()
@@ -508,11 +538,11 @@ class GaussianDiffusion(nn.Module):
 
         return loss, stats
 
-    def forward(self, x_start_embed, x_bytes=None, to_logits_fn=None, t=None, noise=None):
+    def forward(self, x_start_embed, x_bytes=None, to_logits_fn=None, t=None, noise=None, clean_mask=None):
         batch_size = x_start_embed.shape[0]
         if t is None:
             t = torch.randint(0, self.num_timesteps, (batch_size,), device=x_start_embed.device).long()
-        return self.p_losses(x_start_embed, t, noise=noise, x_bytes=x_bytes, to_logits_fn=to_logits_fn)
+        return self.p_losses(x_start_embed, t, noise=noise, x_bytes=x_bytes, to_logits_fn=to_logits_fn, clean_mask=clean_mask)
 
 
 # --- Data Loading ---
@@ -562,12 +592,12 @@ class ByteDiffusionLM(nn.Module):
         self.byte_embedder = ByteEmbedding(m.vocab_size, m.byte_embed_dim)
 
         if m.denoiser == "birnn":  # attribute keeps the name denoise_unet so state_dict keys stay uniform
-            self.denoise_unet = BiRNNDenoiser(m.model_dim, m.byte_embed_dim, m.rnn_layers, m.rnn_conv, m.rnn_ffn_mult,
+            self.denoise_unet = BiRNNDenoiser(m.model_dim, m.byte_embed_dim + int(d.cond_prompt), m.rnn_layers, m.rnn_conv, m.rnn_ffn_mult,
                                               m.dropout, out_dim=m.byte_embed_dim)
         else:
             self.denoise_unet = UNet1D(
                 model_dim=m.model_dim,
-                in_embed_dim=m.byte_embed_dim,
+                in_embed_dim=m.byte_embed_dim + int(d.cond_prompt),
                 out_dim=m.byte_embed_dim,
                 dim_mults=m.dim_mults,
                 time_emb_dim_mult=m.time_emb_mult,
@@ -588,15 +618,17 @@ class ByteDiffusionLM(nn.Module):
             clip_denoised=d.clip_denoised,
             ce_weight=d.ce_weight,
             x0_rescale=d.x0_rescale,
+            cond_prompt=d.cond_prompt,
         )
 
     def get_logits(self, x):
         return F.linear(x, self.byte_embedder.embedding.weight)
 
-    def forward(self, x_bytes, t=None, noise=None):
+    def forward(self, x_bytes, t=None, noise=None, clean_mask=None):
         """Training forward pass: returns (loss, stats)."""
         x_start_embed = self.byte_embedder(x_bytes)
-        return self.gaussian_diffusion(x_start_embed, x_bytes=x_bytes, to_logits_fn=self.get_logits, t=t, noise=noise)
+        return self.gaussian_diffusion(x_start_embed, x_bytes=x_bytes, to_logits_fn=self.get_logits, t=t, noise=noise,
+                                       clean_mask=clean_mask)
 
     def mean_embed_norm(self):
         return self.byte_embedder.embedding.weight.detach().norm(dim=-1).mean().item()

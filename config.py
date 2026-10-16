@@ -51,6 +51,7 @@ class DiffusionConfig:
     ce_weight: float = 0.1
     clip_denoised: bool = True
     x0_rescale: bool = False          # sampler-only: rescale x0_hat to mean embedding norm each step
+    cond_prompt: bool = False         # train with a random clean prefix (inpainting conditioning); denoiser gets a mask channel
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,7 @@ class Config:
     def architecture_hash(self):
         full = self.to_dict()
         if self.arch == "diffusion":
-            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale"}  # sampler-only; keeps old hashes
+            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k == "cond_prompt" and not v)}  # sampler-only / default-off; keeps old hashes
             mod = full["model"]
             if self.model.denoiser == "unet":  # birnn-only fields don't exist for U-Net configs; keeps old hashes
                 mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult")}
