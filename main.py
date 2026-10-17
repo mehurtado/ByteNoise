@@ -466,10 +466,12 @@ class GaussianDiffusion(nn.Module):
         x0_rescale=False,
         cond_prompt=False,
         max_clean_prefix=128,
-        self_cond=False
+        self_cond=False,
+        ce_schedule='const'
     ):
         super().__init__()
         self.self_cond = self_cond
+        self.ce_schedule = ce_schedule
         self.cond_prompt = cond_prompt
         self.max_clean_prefix = max_clean_prefix
         self.denoise_model = denoise_model
@@ -663,7 +665,11 @@ class GaussianDiffusion(nn.Module):
             x0_pred = self.predict_start_from_noise(x_t_embed, t, predicted_noise)
             logits = to_logits_fn(x0_pred)
             ce = F.cross_entropy(logits.reshape(-1, logits.size(-1)), x_bytes.reshape(-1), reduction='none').view(err.shape)
-            ce_loss = (ce * w).sum() / w.sum().clamp(min=1)
+            if self.ce_schedule == 'alpha_bar':  # per-example weight alpha_bar_t, applied before the batch mean
+                ce_ps = (ce * w).sum(1) / w.sum(1).clamp(min=1)
+                ce_loss = (ce_ps * extract(self.alphas_cumprod, t, ce_ps.shape).reshape(-1)).mean()
+            else:
+                ce_loss = (ce * w).sum() / w.sum().clamp(min=1)
             loss = loss + self.ce_weight * ce_loss
             stats['ce_loss'] = ce_loss.detach()
             stats['x0_pred_norm'] = x0_pred.detach().norm(dim=-1).mean()
@@ -755,6 +761,7 @@ class ByteDiffusionLM(nn.Module):
             x0_rescale=d.x0_rescale,
             cond_prompt=d.cond_prompt,
             self_cond=d.self_cond,
+            ce_schedule=d.ce_schedule,
         )
 
     def get_logits(self, x):

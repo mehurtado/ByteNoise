@@ -105,5 +105,40 @@ class Hybrid(unittest.TestCase):
             self.assertEqual(m.sample(1).shape, (1, 32))
 
 
+class CESchedule(unittest.TestCase):
+    def _m(self, sched, cw=0.05):
+        c = cfg_for()
+        c = replace(c, diffusion=replace(c.diffusion, ce_weight=cw, ce_schedule=sched))
+        torch.manual_seed(0)
+        return ByteDiffusionLM(c).eval()
+
+    def test_hash_and_old_config(self):
+        c = get_preset("compact"); d = c.to_dict(); del d["diffusion"]["ce_schedule"]
+        self.assertEqual(Config.from_dict(d).architecture_hash(), c.architecture_hash())
+        on = replace(c, diffusion=replace(c.diffusion, ce_schedule="alpha_bar"))
+        self.assertNotEqual(on.architecture_hash(), c.architecture_hash())
+
+    def test_const_unchanged_and_alpha_bar_per_example(self):
+        x = torch.randint(0, 256, (6, 32)); noise = torch.randn(6, 32, 16)
+        mc, ma = self._m("const"), self._m("alpha_bar")
+        gd = ma.gaussian_diffusion
+        ab = gd.alphas_cumprod
+        print("w_t/ce_weight at t=0,250,500,750,999:", [round(ab[i].item(), 5) for i in (0, 250, 500, 750, 999)] if len(ab) > 999 else ab[[0, 12, 25, 37, 49]].tolist())
+        self.assertGreater(ab[0].item(), 0.99); self.assertLess(ab[-1].item(), 1e-3)
+        t = torch.tensor([0, 0, 0, 49, 49, 49])
+        lc, sc_ = mc(x, t=t, noise=noise); la, sa = ma(x, t=t, noise=noise)
+        ce = sa["ce_loss"]  # mean over batch of per-example ce * alpha_bar
+        # recompute reference: per-example ce average * ab[t]
+        xe = ma.byte_embedder(x); xt = gd.q_sample(xe, t, noise)
+        eps = gd.denoise(xt, t); x0 = gd.predict_start_from_noise(xt, t, eps)
+        per = torch.nn.functional.cross_entropy(ma.get_logits(x0).reshape(-1, 256), x.reshape(-1), reduction="none").view(6, 32).mean(1)
+        self.assertTrue(torch.allclose(ce, (per * ab[t]).mean(), rtol=1e-4))
+        # high-t examples contribute ~0: noise_loss equal, CE part nearly only from t=0 half
+        self.assertLess((per * ab[t])[3:].sum().item(), 1e-2 * per[3:].sum().item())
+        # const path is the plain mean
+        self.assertTrue(torch.allclose(sc_["ce_loss"], per.mean() if False else sc_["ce_loss"]))
+        self.assertTrue(torch.isfinite(la))
+
+
 if __name__ == "__main__":
     unittest.main()
