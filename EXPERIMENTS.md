@@ -80,3 +80,13 @@ Same recipe as the gate run (ce_weight 0, x0_rescale, bs32, lr 3e-4, fp32). The 
 | printable | 0.995 | 0.983 | 0.984 | 0.975 |
 | recovery t=200/400/600/800 | 0.920/0.919/0.892/0.478 | - | 0.853/0.853/0.826/0.432 (t=999: 0.073) | - |
 Latency 0.92 s/sample at batch 32. Samples: recognisable fragments (that, and, her, had, the), garbled longer words, no grammar, stray control/high bytes (\x07 \x08 \xe8 \xc7). Verdict: 4x more training raised word-hit 0.35 -> ~0.47 then plateaued; noise loss kept falling (0.0122 -> 0.0071) while recovery and valid-UTF-8 got WORSE, so noise-prediction loss is not tracking sample quality. Single seed, no loss reweighting tried.
+
+### Self-conditioning, run A: compact U-Net + self_cond (runs/diff_nat_selfcond_s0, commit 67702c9)
+Same recipe as the gate run plus diffusion.self_cond=true (x0_prev channels, p=0.5 zeroed, detached first pass; sampler feeds previous step's rescaled x0 estimate). 2700 s = 31,021 updates (87 ms/update, 11.5 upd/s; gate 24,675 updates, 109 ms/update in its logged run, so no measurable slowdown was observed in wall-clock; timing may be affected by concurrent load), 708 MB VRAM, 14.47M params. Final EMA val noise loss 0.0104 (gate 0.0122; at matched 24k updates 0.0111 vs 0.0122 - eval uses two-pass inference).
+| | gate | self-cond | real val |
+|---|---|---|---|
+| word-hit (32 samples) | 0.351 | 0.383 | 0.933 |
+| valid UTF-8 | 0.81 | 0.375 | 0.97 |
+| x0 acc buckets (eval.py, two-pass) | 0.90/0.90/0.84/0.32 | 0.902/0.900/0.846/0.323 | - |
+| recovery t=200/400/600/800 | 0.920/0.919/0.892/0.478 | 0.921/0.920/0.890/0.501 (t=999: 0.075) | - |
+Latency 0.42 s/sample at batch 32. Verdict: NOT promising. Word-hit 0.383 is +0.03 over the gate (below the 0.45 / +0.10 bar and within single-seed noise); the t>=750 x0 accuracy is unchanged at 0.32 and valid UTF-8 dropped; only recovery at t=800 improved slightly (0.478 -> 0.501). Self-conditioning alone does not fix the high-noise weakness.
