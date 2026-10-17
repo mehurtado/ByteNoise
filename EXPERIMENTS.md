@@ -90,3 +90,18 @@ Same recipe as the gate run plus diffusion.self_cond=true (x0_prev channels, p=0
 | x0 acc buckets (eval.py, two-pass) | 0.90/0.90/0.84/0.32 | 0.902/0.900/0.846/0.323 | - |
 | recovery t=200/400/600/800 | 0.920/0.919/0.892/0.478 | 0.921/0.920/0.890/0.501 (t=999: 0.075) | - |
 Latency 0.42 s/sample at batch 32. Verdict: NOT promising. Word-hit 0.383 is +0.03 over the gate (below the 0.45 / +0.10 bar and within single-seed noise); the t>=750 x0 accuracy is unchanged at 0.32 and valid UTF-8 dropped; only recovery at t=800 improved slightly (0.478 -> 0.501). Self-conditioning alone does not fix the high-noise weakness.
+
+### Hybrid denoiser, runs B and C (commits 958c2ff, a6ab3e7; single seed, 2700 s each, natural-v1)
+Hybrid denoiser (config `hybrid` preset): d=256, 7 blocks, each = RMSNorm+FiLM -> parallel branches (dilated depthwise conv 1/2/4/8, bidirectional minGRU scan width 128, full-resolution non-causal rotary attention 8 heads, depthwise k=5 n-gram conv) -> concat -> linear -> GatedFFN -> residual. 14.00M params (14.02M with self-cond), U-Net compact 14.4M. Recipe as the gate run (ce_weight 0 for B, x0_rescale, bs32, lr 3e-4) EXCEPT precision bf16 (autocast; measured 252 vs 425 ms/update fp32 under GPU contention, 2.4 vs 3.6 GB), so the matched resource is wall-clock, not updates. B: no self-cond. C: self_cond + signal-weighted CE (ce_weight 0.05, ce_schedule=alpha_bar: per-example weight 0.05*alpha_bar_t applied to each example's mean CE before the batch mean; alpha_bar at t=0/250/500/750/999 = 0.9999/0.846/0.492/0.143/0.0). Note C changes two things at once vs B (self-cond and weighted CE) and the weight is only ~0 for t >~ 900.
+| | gate (U-Net) | A (U-Net+selfcond) | B hybrid | C hybrid+selfcond+wCE | real val |
+|---|---|---|---|---|---|
+| updates in 2700 s | 24,675 | 31,021 | 19,873 | 17,593 | |
+| peak VRAM (train) | 0.70 GB | - | 2.34 GB | 2.34 GB | |
+| word-hit (32, seed 0, ema) | 0.351 | 0.383 | 0.356 | 0.332 | 0.933 |
+| valid UTF-8 (gate_text) | 0.81 | 0.375 | 0.9375 | 0.9688 | 0.969 |
+| distinct_4gram / repeated_8gram | - | - | 0.955 / 0 | 0.969 / 0 | 0.922 / 0.006 |
+| eval.py valid UTF-8 (val) | - | - | 0.969 | 1.0 | |
+| val noise loss | 0.0122 | - | 0.0063 | 0.0072 | |
+| x0 acc buckets (diagnostic) | 0.90/0.90/0.84/0.32 | 0.90/0.90/0.85/0.32 | 1.00/1.00/0.98/0.44 | 1.00/1.00/0.98/0.44 | |
+| recovery t=200/400/600/800 (diagnostic) | 0.920/0.919/0.892/0.478 | 0.921/0.920/0.890/0.501 | 1.000/1.000/0.996/0.667 | 1.000/1.000/0.996/0.644 | |
+Latency 1.2-1.3 s/sample at batch 32 (U-Net 0.4-0.9). Samples (both): lowercase English-like letter and spacing statistics, many short real words ("the", "and", "he"), garbled longer words, no grammar, no stray control bytes; B and C produce near-identical text from the same noise seed. Verdict: NOT promising by the plan's rule (word-hit 0.356 / 0.332 vs bar 0.45; +0.005 / -0.02 over the gate, inside single-seed noise). The hybrid clearly improves denoising (noise loss halved, recovery up) and valid UTF-8 with C (0.97) is better than the gate/A, but readable-word rate did not move; word-hit is flat across all four 45-min runs (0.33-0.38). Single seed, bf16 vs fp32 and fewer updates are confounds; no attribution to individual components is possible (C bundles self-cond + weighted CE).
