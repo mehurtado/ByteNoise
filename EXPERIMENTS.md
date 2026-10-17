@@ -70,3 +70,13 @@ Overall conclusion: on these algorithmic tasks the byte-diffusion denoisers (U-N
 ce_weight 0, x0_rescale, bs32, lr 3e-4, fp32, 2700 s = 24,675 updates (~4.6 epochs), 9.1 upd/s, 698 MB VRAM, 14.4M params. Final EMA val noise loss 0.0122 and still falling.
 Samples (32 x 256 B): word-hit 0.351 vs 0.933 on real val text; valid UTF-8 0.81 vs 0.97; English-like letter frequencies, spacing and short words, garbled longer words, no grammar. x0 accuracy by noise bucket 0.90/0.90/0.84/0.32 (t>=750 is the bottleneck); reverse-chain recovery t=200/400/600/800: 0.920/0.919/0.892/0.478. Latency 28 s per 1000-step batch (0.87 s/sample at batch 32).
 Verdict: gate FAIL at 45 min, but under-trained (loss still falling), single seed. Next test would be a longer run and/or high-t-weighted loss, not a verdict on the method.
+
+### Natural-text long run: compact U-Net diffusion, 104,489 updates (runs/diff_nat_long_s0, 12,000 s, ~4.4x the gate run)
+Same recipe as the gate run (ce_weight 0, x0_rescale, bs32, lr 3e-4, fp32). The PC crashed at ~82k updates; resumed from the 80k checkpoint (elapsed time restored), so metrics.jsonl has duplicate rows for 80k-82k (pre-crash log: runs/diff_nat_long_s0.precrash.log). Final val noise loss 0.0071 (gate run 0.0122).
+| | gate (24.7k upd) | 80k upd | final (104k upd) | real val |
+|---|---|---|---|---|
+| word-hit | 0.351 | 0.478 | 0.465 | 0.933 |
+| valid UTF-8 | 0.81 | 0.03 | 0.03 | 0.97 |
+| printable | 0.995 | 0.983 | 0.984 | 0.975 |
+| recovery t=200/400/600/800 | 0.920/0.919/0.892/0.478 | - | 0.853/0.853/0.826/0.432 (t=999: 0.073) | - |
+Latency 0.92 s/sample at batch 32. Samples: recognisable fragments (that, and, her, had, the), garbled longer words, no grammar, stray control/high bytes (\x07 \x08 \xe8 \xc7). Verdict: 4x more training raised word-hit 0.35 -> ~0.47 then plateaued; noise loss kept falling (0.0122 -> 0.0071) while recovery and valid-UTF-8 got WORSE, so noise-prediction loss is not tracking sample quality. Single seed, no loss reweighting tried.
