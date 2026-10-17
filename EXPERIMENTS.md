@@ -105,3 +105,22 @@ Hybrid denoiser (config `hybrid` preset): d=256, 7 blocks, each = RMSNorm+FiLM -
 | x0 acc buckets (diagnostic) | 0.90/0.90/0.84/0.32 | 0.90/0.90/0.85/0.32 | 1.00/1.00/0.98/0.44 | 1.00/1.00/0.98/0.44 | |
 | recovery t=200/400/600/800 (diagnostic) | 0.920/0.919/0.892/0.478 | 0.921/0.920/0.890/0.501 | 1.000/1.000/0.996/0.667 | 1.000/1.000/0.996/0.644 | |
 Latency 1.2-1.3 s/sample at batch 32 (U-Net 0.4-0.9). Samples (both): lowercase English-like letter and spacing statistics, many short real words ("the", "and", "he"), garbled longer words, no grammar, no stray control bytes; B and C produce near-identical text from the same noise seed. Verdict: NOT promising by the plan's rule (word-hit 0.356 / 0.332 vs bar 0.45; +0.005 / -0.02 over the gate, inside single-seed noise). The hybrid clearly improves denoising (noise loss halved, recovery up) and valid UTF-8 with C (0.97) is better than the gate/A, but readable-word rate did not move; word-hit is flat across all four 45-min runs (0.33-0.38). Single seed, bf16 vs fp32 and fewer updates are confounds; no attribution to individual components is possible (C bundles self-cond + weighted CE).
+
+## Sampler sweep on existing natural-text checkpoints (scripts/sampler_sweep.py, no retraining)
+32 samples, seed 0, EMA, batch 32. Own loop with generalized DDPM posterior (ab_t, ab_prev), x0_rescale and self-cond carry kept; s scales posterior noise. Control = model.sample (gate protocol; reproduces 0.351 / 0.332). Raw: runs/sampler_sweep_results.json.
+
+| variant | gate U-Net word_hit | hybrid+selfcond word_hit (distinct_4gram) | s/sample (U-Net / hybrid) |
+|---|---|---|---|
+| control (model.sample) | 0.351 | 0.332 (0.969) | 0.41 / 1.23 |
+| 1000 steps s=1.0 (own loop) | 0.330 | 0.325 | |
+| s=0.8 | 0.365 | 0.406 (0.942) | |
+| s=0.5 | 0.301 | 0.473 (0.889) | |
+| s=0.25 | 0.021 (d4 0.53, r8 0.02) | 0.487 (0.730, r8 0.03) | |
+| s=0.0 | 0.000 (collapsed) | 0.000 (collapsed) | |
+| uniform 250 / 500, s=1 | 0.337 / 0.332 | 0.314 / 0.312 | 0.11,0.23 / 0.30,0.62 |
+| late-heavy 250 / 500, s=1 | 0.326 / 0.333 | 0.316 / 0.324 | |
+| uni250 s=0.8 | 0.385 | - | 0.11 |
+| uni250 s=0.5 / 0.25 | 0.294 / - | 0.453 (0.896) / 0.483 (0.704, r8 0.075) | 0.31 |
+| late500 s=0.5 / 0.25 | - | 0.463 / 0.481 | 0.61 |
+
+Verdict: respacing alone does nothing to word_hit (but 250 steps is 4x faster at equal quality). Lowering noise helps only the hybrid+selfcond model (+0.07 at s=0.8, +0.14 at s=0.5, 0.45-0.49 for s<=0.5, valid UTF-8 -> 1.0), at the cost of diversity (distinct_4gram 0.97 -> 0.89 at s=0.5, repeats appear at 0.25); sample text is still non-words/garbled ("ene her ane fovesee as an is of alich"), so part of the gain is more common short words, not real language. U-Net gate: nothing meaningful (best 0.385 at uni250 s=0.8, +0.03, noise). Single seed.
