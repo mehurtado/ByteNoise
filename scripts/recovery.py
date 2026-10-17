@@ -30,8 +30,13 @@ def main():
         x0 = model.byte_embedder(x)
         for t0 in a.ts:
             xt = gd.q_sample(x0, torch.full((a.n,), t0, device=dev, dtype=torch.long))
+            x0p = None
             for i in reversed(range(t0 + 1)):
-                xt = gd.p_sample(xt, torch.full((a.n,), i, device=dev, dtype=torch.long), i, tn)
+                tt = torch.full((a.n,), i, device=dev, dtype=torch.long)
+                if gd.self_cond:
+                    xt, x0p = gd.p_sample(xt, tt, i, tn, x0_prev=x0p, return_x0=True)
+                else:
+                    xt = gd.p_sample(xt, tt, i, tn)
             acc = (model.get_logits(xt).argmax(-1) == x).float().mean().item()
             print(f"t={t0}: recovery={acc:.3f}", flush=True)
 

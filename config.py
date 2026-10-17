@@ -51,6 +51,7 @@ class DiffusionConfig:
     ce_weight: float = 0.1
     clip_denoised: bool = True
     x0_rescale: bool = False          # sampler-only: rescale x0_hat to mean embedding norm each step
+    self_cond: bool = False           # feed previous x0 estimate as extra input channels (default-off; excluded from hash when False)
     cond_prompt: bool = False         # train with a random clean prefix (inpainting conditioning); denoiser gets a mask channel
 
 
@@ -108,7 +109,7 @@ class Config:
     def architecture_hash(self):
         full = self.to_dict()
         if self.arch == "diffusion":
-            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k == "cond_prompt" and not v)}  # sampler-only / default-off; keeps old hashes
+            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v)}  # sampler-only / default-off; keeps old hashes
             mod = full["model"]
             if self.model.denoiser == "unet":  # birnn-only fields don't exist for U-Net configs; keeps old hashes
                 mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult")}
@@ -194,6 +195,8 @@ def validate(cfg):
             errors.append("head dim must be even for rotary embeddings")
         if lm.loops < 1 or lm.n_layers < 1:
             errors.append("loops and n_layers must be >= 1")
+    if d.self_cond and m.denoiser != "unet":
+        errors.append("diffusion.self_cond is only supported for the unet denoiser")
     if t.precision not in ("fp32", "bf16", "fp16"):
         errors.append(f"unknown precision {t.precision!r}")
     if cfg.arch != "diffusion":

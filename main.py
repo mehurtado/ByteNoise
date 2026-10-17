@@ -363,9 +363,11 @@ class GaussianDiffusion(nn.Module):
         ce_weight=0.1,
         x0_rescale=False,
         cond_prompt=False,
-        max_clean_prefix=128
+        max_clean_prefix=128,
+        self_cond=False
     ):
         super().__init__()
+        self.self_cond = self_cond
         self.cond_prompt = cond_prompt
         self.max_clean_prefix = max_clean_prefix
         self.denoise_model = denoise_model
@@ -406,12 +408,27 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer('posterior_mean_coef1', betas * torch.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod))
         self.register_buffer('posterior_mean_coef2', (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod))
 
-    def denoise(self, x_t, t, clean_mask=None):
-        """Call the denoiser; with cond_prompt a 1-channel clean-position mask (b, n) is appended to the input."""
+    def denoise(self, x_t, t, clean_mask=None, x0_prev=None):
+        """Call the denoiser; with cond_prompt a 1-channel clean-position mask (b, n) is appended to the input.
+
+        With self_cond the previous x0 estimate (b, n, d) is appended last (zeros when x0_prev is None)."""
         if self.cond_prompt:
             m = torch.zeros(x_t.shape[:2], device=x_t.device, dtype=x_t.dtype) if clean_mask is None else clean_mask.to(x_t.dtype)
             x_t = torch.cat((x_t, m.unsqueeze(-1)), dim=-1)
+        if self.self_cond:
+            xp = torch.zeros_like(x_t[..., :self.denoise_model_embed_dim(x_t)]) if x0_prev is None else x0_prev.to(x_t.dtype)
+            x_t = torch.cat((x_t, xp), dim=-1)
         return self.denoise_model(x_t, t)
+
+    def denoise_model_embed_dim(self, x_t):
+        return x_t.shape[-1] - int(self.cond_prompt)
+
+    def x0_estimate(self, x_t, t, eps, target_norm=None):
+        """Detached clean-embedding estimate used as the self-conditioning input (per-position norm rescale)."""
+        x0 = self.predict_start_from_noise(x_t, t, eps)
+        if target_norm is not None:
+            x0 = x0 * (target_norm / x0.norm(dim=-1, keepdim=True).clamp(min=1e-8))
+        return x0.detach()
 
     def sample_clean_mask(self, batch_size, device):
         """Random clean prefix per window, length uniform in [0, max_clean_prefix]."""
@@ -436,7 +453,7 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
     @torch.no_grad()
-    def p_sample(self, x_t_embed, t, t_index, target_norm=None): # t is tensor, t_index is scalar
+    def p_sample(self, x_t_embed, t, t_index, target_norm=None, x0_prev=None, return_x0=False): # t is tensor, t_index is scalar
         """Denoise one step from x_t to x_{t-1}.
 
         With x0_rescale: predict x0, rescale every position vector to target_norm (mean real embedding norm),
@@ -445,12 +462,11 @@ class GaussianDiffusion(nn.Module):
         if self.x0_rescale:
             if target_norm is None:
                 raise ValueError('x0_rescale sampling needs target_norm (mean embedding norm)')
-            x0_hat = self.predict_start_from_noise(x_t_embed, t, self.denoise(x_t_embed, t))
+            x0_hat = self.predict_start_from_noise(x_t_embed, t, self.denoise(x_t_embed, t, x0_prev=x0_prev))
             x0_hat = x0_hat * (target_norm / x0_hat.norm(dim=-1, keepdim=True).clamp(min=1e-8))
             mean, _, log_var = self.q_posterior(x0_hat, x_t_embed, t)
-            if t_index == 0:
-                return mean
-            return mean + (0.5 * log_var).exp() * torch.randn_like(x_t_embed)
+            out = mean if t_index == 0 else mean + (0.5 * log_var).exp() * torch.randn_like(x_t_embed)
+            return (out, x0_hat) if return_x0 else out
 
         betas_t = extract(self.betas, t, x_t_embed.shape)
         sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x_t_embed.shape)
@@ -459,15 +475,18 @@ class GaussianDiffusion(nn.Module):
 
 
         # Equation 11 in DDPM: model predicts noise
-        predicted_noise = self.denoise(x_t_embed, t)
+        predicted_noise = self.denoise(x_t_embed, t, x0_prev=x0_prev)
         model_mean = sqrt_recip_alphas_t * (x_t_embed - betas_t * predicted_noise / sqrt_one_minus_alphas_cumprod_t)
 
         if t_index == 0:
-            return model_mean
+            out = model_mean
         else:
             posterior_variance_t = extract(self.posterior_variance, t, x_t_embed.shape)
             noise = torch.randn_like(x_t_embed)
-            return model_mean + torch.sqrt(posterior_variance_t) * noise
+            out = model_mean + torch.sqrt(posterior_variance_t) * noise
+        if return_x0:
+            return out, self.x0_estimate(x_t_embed, t, predicted_noise, target_norm)
+        return out
 
     @torch.no_grad()
     def p_sample_loop(self, shape, target_norm=None):
@@ -477,9 +496,13 @@ class GaussianDiffusion(nn.Module):
         device = self.betas.device
         x_t_embed = torch.randn(shape, device=device) # shape: (batch, seq_len, embed_dim)
 
+        x0_prev = None  # zeros at the first step when self_cond
         for i in reversed(range(0, self.num_timesteps)):
             current_t_tensor = torch.full((batch_size,), i, device=device, dtype=torch.long)
-            x_t_embed = self.p_sample(x_t_embed, current_t_tensor, i, target_norm)
+            if self.self_cond:
+                x_t_embed, x0_prev = self.p_sample(x_t_embed, current_t_tensor, i, target_norm, x0_prev=x0_prev, return_x0=True)
+            else:
+                x_t_embed = self.p_sample(x_t_embed, current_t_tensor, i, target_norm)
 
         # x_t_embed is now approximately x_0_embed
         if self.clip_denoised and not self.x0_rescale: # Optional: clip to [-1, 1] if embeddings are normalized
@@ -508,7 +531,15 @@ class GaussianDiffusion(nn.Module):
         x_t_embed = self.q_sample(x_start_embed, t, noise=noise)
         if clean_mask is not None:
             x_t_embed = torch.where(clean_mask.unsqueeze(-1), x_start_embed, x_t_embed)
-        predicted_noise = self.denoise(x_t_embed, t, clean_mask)
+        x0_prev = None
+        if self.self_cond:
+            with torch.no_grad():
+                eps0 = self.denoise(x_t_embed, t, clean_mask, x0_prev=None)
+                tn = x_start_embed.detach().norm(dim=-1).mean()
+                x0_prev = self.x0_estimate(x_t_embed, t, eps0, tn)
+                keep = (torch.rand(x_start_embed.shape[0], device=x_start_embed.device) >= 0.5).to(x0_prev.dtype)
+                x0_prev = x0_prev * keep[:, None, None]  # prob 0.5 per example: zeros
+        predicted_noise = self.denoise(x_t_embed, t, clean_mask, x0_prev=x0_prev)
 
         if self.loss_type == 'l1':
             err = (noise - predicted_noise).abs().mean(dim=-1)
@@ -597,7 +628,7 @@ class ByteDiffusionLM(nn.Module):
         else:
             self.denoise_unet = UNet1D(
                 model_dim=m.model_dim,
-                in_embed_dim=m.byte_embed_dim + int(d.cond_prompt),
+                in_embed_dim=m.byte_embed_dim * (1 + int(d.self_cond)) + int(d.cond_prompt),
                 out_dim=m.byte_embed_dim,
                 dim_mults=m.dim_mults,
                 time_emb_dim_mult=m.time_emb_mult,
@@ -619,6 +650,7 @@ class ByteDiffusionLM(nn.Module):
             ce_weight=d.ce_weight,
             x0_rescale=d.x0_rescale,
             cond_prompt=d.cond_prompt,
+            self_cond=d.self_cond,
         )
 
     def get_logits(self, x):

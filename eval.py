@@ -194,7 +194,11 @@ def eval_diffusion(model, data_name, split="val", device="cpu", num_buckets=4, w
             xb, t, noise = x[i:i + batch_size].to(device), t_all[i:i + batch_size].to(device), noise_all[i:i + batch_size].to(device)
             x0 = model.byte_embedder(xb)
             xt = gd.q_sample(x0, t, noise=noise)
-            pred = gd.denoise_model(xt, t)
+            if gd.self_cond:  # two-pass, as in training (first pass zeros -> x0_prev -> second pass)
+                e0 = gd.denoise(xt, t)
+                pred = gd.denoise(xt, t, x0_prev=gd.x0_estimate(xt, t, e0, x0.norm(dim=-1).mean()))
+            else:
+                pred = gd.denoise_model(xt, t)
             d = noise - pred
             nl.append((d.abs() if gd.loss_type == "l1" else d.pow(2)).mean(dim=(1, 2)).cpu())
             lg = model.get_logits(gd.predict_start_from_noise(xt, t, pred))
