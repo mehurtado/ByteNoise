@@ -10,7 +10,7 @@ import copy
 from einops import rearrange, reduce # Using einops for clearer tensor manipulations
 
 from config import Config, ModelConfig, DiffusionConfig, validate
-from models_lm import RMSNorm, GatedFFN, scan_parallel, log_positive_activation
+from models_lm import RMSNorm, GatedFFN, scan_parallel, log_positive_activation, rotary_cache, apply_rotary
 
 
 # --- Helper Functions & Modules ---
@@ -347,6 +347,108 @@ class BiRNNDenoiser(nn.Module):
         return self.out(self.final_norm(h))
 
 
+class _DWConvBranch(nn.Module):
+    """Multi-scale local branch: depthwise k=3 convs at dilations 1/2/4/8 (receptive field ~31), concat, pointwise mix."""
+    DILATIONS = (1, 2, 4, 8)
+
+    def __init__(self, d):
+        super().__init__()
+        self.convs = nn.ModuleList([nn.Conv1d(d, d, 3, groups=d, dilation=r, padding=r) for r in self.DILATIONS])
+        self.mix = nn.Linear(d * len(self.DILATIONS), d)
+
+    def forward(self, x, rope=None):
+        xt = x.transpose(1, 2)
+        return self.mix(F.silu(torch.cat([c(xt) for c in self.convs], dim=1)).transpose(1, 2))
+
+
+class _NGramBranch(nn.Module):
+    """Local n-gram evidence: depthwise conv (kernel k, centered) + pointwise."""
+    def __init__(self, d, kernel):
+        super().__init__()
+        self.conv = nn.Conv1d(d, d, kernel, groups=d, padding=kernel // 2)
+        self.mix = nn.Linear(d, d)
+
+    def forward(self, x, rope=None):
+        return self.mix(F.silu(self.conv(x.transpose(1, 2)).transpose(1, 2)))
+
+
+class _RNNBranch(nn.Module):
+    """Bidirectional recurrent branch: down-project to `width`, BiMixer (fwd + flipped scans, fp32 inside), project back."""
+    def __init__(self, d, width, conv_kernel):
+        super().__init__()
+        self.down = nn.Linear(d, width, bias=False)
+        self.mixer = BiMixer(width, conv_kernel)
+        self.up = nn.Linear(width, d, bias=False)
+
+    def forward(self, x, rope=None):
+        return self.up(self.mixer(self.down(x)))
+
+
+class _GlobalAttnBranch(nn.Module):
+    """Full-resolution non-causal multi-head self-attention with rotary positions."""
+    def __init__(self, d, heads):
+        super().__init__()
+        self.h = heads
+        self.qkv = nn.Linear(d, 3 * d, bias=False)
+        self.out = nn.Linear(d, d, bias=False)
+
+    def forward(self, x, rope):
+        b, n, c = x.shape
+        q, k, v = self.qkv(x).view(b, n, 3, self.h, c // self.h).permute(2, 0, 3, 1, 4)
+        q, k = apply_rotary(q, *rope), apply_rotary(k, *rope)
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=False)
+        return self.out(y.transpose(1, 2).reshape(b, n, c))
+
+
+class HybridBlock(nn.Module):
+    """RMSNorm -> FiLM -> parallel branches on the same input -> concat -> linear mix -> GatedFFN (its w_out is the
+    output projection) -> residual."""
+    def __init__(self, m: ModelConfig):
+        super().__init__()
+        d = m.model_dim
+        self.names = [b for b in m.hybrid_branches.split(",") if b]
+        makers = {"conv": lambda: _DWConvBranch(d), "rnn": lambda: _RNNBranch(d, m.hybrid_rnn_width, m.rnn_conv),
+                  "attn": lambda: _GlobalAttnBranch(d, m.hybrid_heads), "ngram": lambda: _NGramBranch(d, m.hybrid_ngram_kernel)}
+        self.branches = nn.ModuleDict({n: makers[n]() for n in self.names})
+        self.norm = RMSNorm(d)
+        self.film = nn.Linear(d, 2 * d)
+        self.mix = nn.Linear(len(self.names) * d, d)
+        self.ffn = GatedFFN(d, m.hybrid_ffn_mult, m.dropout)
+
+    def forward(self, h, t_emb, rope):
+        s, b = self.film(t_emb)[:, None].chunk(2, dim=-1)
+        z = self.norm(h) * (1 + s) + b
+        y = torch.cat([self.branches[n](z, rope) for n in self.names], dim=-1)
+        return h + self.ffn(self.mix(y))
+
+
+class HybridDenoiser(nn.Module):
+    """Parallel multi-branch (conv / bidirectional recurrent / global attention / n-gram) noise predictor.
+    Same interface as UNet1D: (b, n, in_embed), (b,) -> (b, n, out_dim)."""
+    def __init__(self, m: ModelConfig, in_embed_dim, out_dim):
+        super().__init__()
+        d = m.model_dim
+        self.time_mlp = nn.Sequential(SinusoidalPosEmb(d), nn.Linear(d, d), nn.GELU(), nn.Linear(d, d))
+        self.inp = nn.Linear(in_embed_dim, d)
+        self.blocks = nn.ModuleList([HybridBlock(m) for _ in range(m.hybrid_layers)])
+        for blk in self.blocks:  # scaled residual init
+            nn.init.normal_(blk.ffn.w_out.weight, std=0.02 / math.sqrt(2 * m.hybrid_layers))
+        self.final_norm = RMSNorm(d)
+        self.out = nn.Linear(d, out_dim)
+        self.head_dim = d // m.hybrid_heads
+        self._rope = None
+
+    def forward(self, x_embed, time):
+        n = x_embed.size(1)
+        if self._rope is None or self._rope[0].size(0) < n or self._rope[0].device != x_embed.device:
+            self._rope = rotary_cache(n, self.head_dim, x_embed.device)
+        t_emb = self.time_mlp(time)
+        h = self.inp(x_embed) + t_emb[:, None]
+        for blk in self.blocks:
+            h = blk(h, t_emb, self._rope)
+        return self.out(self.final_norm(h))
+
+
 # --- Gaussian Diffusion Process ---
 class GaussianDiffusion(nn.Module):
     def __init__(
@@ -625,6 +727,8 @@ class ByteDiffusionLM(nn.Module):
         if m.denoiser == "birnn":  # attribute keeps the name denoise_unet so state_dict keys stay uniform
             self.denoise_unet = BiRNNDenoiser(m.model_dim, m.byte_embed_dim + int(d.cond_prompt), m.rnn_layers, m.rnn_conv, m.rnn_ffn_mult,
                                               m.dropout, out_dim=m.byte_embed_dim)
+        elif m.denoiser == "hybrid":
+            self.denoise_unet = HybridDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + int(d.cond_prompt), m.byte_embed_dim)
         else:
             self.denoise_unet = UNet1D(
                 model_dim=m.model_dim,

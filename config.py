@@ -15,10 +15,17 @@ class ModelConfig:
     attn_heads: int = 6
     dropout: float = 0.1
     seq_len: int = 256
-    denoiser: str = "unet"           # "unet" | "birnn"
+    denoiser: str = "unet"           # "unet" | "birnn" | "hybrid"
     rnn_layers: int = 8               # birnn only: block count (width = model_dim)
     rnn_conv: int = 7                 # birnn only: centered depthwise conv width (odd)
     rnn_ffn_mult: float = 2.667       # birnn only
+    # hybrid only (excluded from architecture_hash for other denoisers); width = model_dim, depth = hybrid_layers
+    hybrid_layers: int = 6
+    hybrid_branches: str = "conv,rnn,attn,ngram"   # comma list, subset of conv,rnn,attn,ngram
+    hybrid_heads: int = 8
+    hybrid_rnn_width: int = 128       # inner width of the bidirectional recurrent branch
+    hybrid_ffn_mult: float = 4.0
+    hybrid_ngram_kernel: int = 5      # odd
 
     @property
     def attn_dim_head(self):
@@ -111,8 +118,13 @@ class Config:
         if self.arch == "diffusion":
             diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v)}  # sampler-only / default-off; keeps old hashes
             mod = full["model"]
-            if self.model.denoiser == "unet":  # birnn-only fields don't exist for U-Net configs; keeps old hashes
-                mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult")}
+            hyb = [k for k in mod if k.startswith("hybrid_")]
+            if self.model.denoiser == "unet":  # birnn/hybrid-only fields don't exist for U-Net configs; keeps old hashes
+                mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult", *hyb)}
+            elif self.model.denoiser == "birnn":  # keeps birnn hashes from before the hybrid fields existed
+                mod = {k: v for k, v in mod.items() if k not in hyb}
+            else:  # hybrid reuses rnn_conv only
+                mod = {k: v for k, v in mod.items() if k not in ("rnn_layers", "rnn_ffn_mult")}
             parts = {"model": mod, "diffusion": diff}
         else:
             parts = {"arch": self.arch, "lm": full["lm"]}
@@ -129,6 +141,10 @@ PRESETS = {
     "birnn": Config(
         name="birnn",
         model=ModelConfig(byte_embed_dim=64, model_dim=256, denoiser="birnn", rnn_layers=8),
+    ),
+    "hybrid": Config(
+        name="hybrid",
+        model=ModelConfig(byte_embed_dim=64, model_dim=256, seq_len=256, denoiser="hybrid", hybrid_layers=7),
     ),
     "debug": Config(
         name="debug",
@@ -195,8 +211,8 @@ def validate(cfg):
             errors.append("head dim must be even for rotary embeddings")
         if lm.loops < 1 or lm.n_layers < 1:
             errors.append("loops and n_layers must be >= 1")
-    if d.self_cond and m.denoiser != "unet":
-        errors.append("diffusion.self_cond is only supported for the unet denoiser")
+    if d.self_cond and m.denoiser not in ("unet", "hybrid"):
+        errors.append("diffusion.self_cond is only supported for the unet and hybrid denoisers")
     if t.precision not in ("fp32", "bf16", "fp16"):
         errors.append(f"unknown precision {t.precision!r}")
     if cfg.arch != "diffusion":
@@ -205,13 +221,24 @@ def validate(cfg):
         if errors:
             raise ValueError("invalid config:\n  - " + "\n  - ".join(errors))
         return cfg
-    if m.denoiser not in ("unet", "birnn"):
+    if m.denoiser not in ("unet", "birnn", "hybrid"):
         errors.append(f"unknown denoiser {m.denoiser!r}")
-    if m.denoiser == "birnn":
-        if m.rnn_layers < 1 or m.rnn_conv < 1 or m.rnn_conv % 2 == 0:
-            errors.append("birnn needs rnn_layers >= 1 and an odd rnn_conv")
-        if m.model_dim % 2 != 0:
-            errors.append("birnn model_dim must be even (sinusoidal time embedding)")
+    if m.denoiser == "hybrid":
+        br = [b for b in m.hybrid_branches.split(",") if b]
+        if not br or any(b not in ("conv", "rnn", "attn", "ngram") for b in br) or len(set(br)) != len(br):
+            errors.append(f"hybrid_branches must be a non-empty unique subset of conv,rnn,attn,ngram (got {m.hybrid_branches!r})")
+        if m.hybrid_layers < 1 or m.hybrid_heads < 1 or m.model_dim % m.hybrid_heads != 0 or (m.model_dim // max(m.hybrid_heads, 1)) % 2:
+            errors.append("hybrid needs hybrid_layers >= 1 and model_dim divisible by hybrid_heads with an even head dim")
+        if m.model_dim % 2 != 0 or m.hybrid_rnn_width < 1:
+            errors.append("hybrid model_dim must be even and hybrid_rnn_width >= 1")
+        if m.hybrid_ngram_kernel % 2 == 0 or m.rnn_conv % 2 == 0:
+            errors.append("hybrid_ngram_kernel and rnn_conv must be odd")
+    if m.denoiser in ("birnn", "hybrid"):
+        if m.denoiser == "birnn":
+            if m.rnn_layers < 1 or m.rnn_conv < 1 or m.rnn_conv % 2 == 0:
+                errors.append("birnn needs rnn_layers >= 1 and an odd rnn_conv")
+            if m.model_dim % 2 != 0:
+                errors.append("birnn model_dim must be even (sinusoidal time embedding)")
         if d.beta_schedule not in ("linear", "cosine"):
             errors.append(f"unknown beta_schedule {d.beta_schedule!r}")
         if d.loss_type not in ("l1", "l2"):
