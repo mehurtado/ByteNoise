@@ -194,14 +194,19 @@ def eval_diffusion(model, data_name, split="val", device="cpu", num_buckets=4, w
             xb, t, noise = x[i:i + batch_size].to(device), t_all[i:i + batch_size].to(device), noise_all[i:i + batch_size].to(device)
             x0 = model.byte_embedder(xb)
             xt = gd.q_sample(x0, t, noise=noise)
+            table = model.embedding_table()
             if gd.self_cond:  # two-pass, as in training (first pass zeros -> x0_prev -> second pass)
                 e0 = gd.denoise(xt, t)
-                pred = gd.denoise(xt, t, x0_prev=gd.x0_estimate(xt, t, e0, x0.norm(dim=-1).mean()))
+                pred = gd.denoise(xt, t, x0_prev=gd.x0_estimate(xt, t, e0, x0.norm(dim=-1).mean(), table=table))
             else:
                 pred = gd.denoise_model(xt, t)
-            d = noise - pred
-            nl.append((d.abs() if gd.loss_type == "l1" else d.pow(2)).mean(dim=(1, 2)).cpu())
-            lg = model.get_logits(gd.predict_start_from_noise(xt, t, pred))
+            if gd.param == "logits":  # network output = byte logits; noise_loss reported for the implied eps; x0 acc = argmax(logits) acc
+                lg = pred.float()
+                d = noise - gd.eps_from_x0(xt, t, gd.x0_from_logits(lg, table))
+            else:
+                d = noise - pred
+                lg = model.get_logits(gd.predict_start_from_noise(xt, t, pred))
+            nl.append((d.abs() if gd.loss_type == "l1" and gd.param != "logits" else d.pow(2)).mean(dim=(1, 2)).cpu())
             ce.append(F.cross_entropy(lg.reshape(-1, lg.size(-1)), xb.reshape(-1), reduction="none").view(xb.shape).mean(1).cpu())
             acc.append((lg.argmax(-1) == xb).float().mean(1).cpu())
         nl, ce, acc = torch.cat(nl), torch.cat(ce), torch.cat(acc)

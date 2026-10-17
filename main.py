@@ -86,12 +86,19 @@ class SinusoidalPosEmb(nn.Module):
         return embeddings
 
 class ByteEmbedding(nn.Module):
-    def __init__(self, vocab_size, embed_dim):
+    def __init__(self, vocab_size, embed_dim, embed_norm=0.0):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim)
+        self.embed_norm = embed_norm
+
+    def table(self):
+        """(vocab, dim) embedding table; with embed_norm > 0 every row is rescaled to exactly that L2 norm."""
+        w = self.embedding.weight
+        return F.normalize(w, dim=-1) * self.embed_norm if self.embed_norm > 0 else w
+
     def forward(self, x):
         # x: (batch_size, seq_len)
-        return self.embedding(x) # Output: (batch_size, seq_len, embed_dim)
+        return F.embedding(x, self.table()) # Output: (batch_size, seq_len, embed_dim)
 
 # --- U-Net Components ---
 
@@ -450,6 +457,10 @@ class HybridDenoiser(nn.Module):
 
 
 # --- Gaussian Diffusion Process ---
+T_BINS = 50          # time-warp bins
+WARP_EMA = 0.05      # per-observation EMA rate of the per-bin loss
+WARP_MIX = 0.8       # p(bin) = WARP_MIX * normalised EMA loss + (1 - WARP_MIX) * uniform
+
 class GaussianDiffusion(nn.Module):
     def __init__(
         self,
@@ -467,9 +478,19 @@ class GaussianDiffusion(nn.Module):
         cond_prompt=False,
         max_clean_prefix=128,
         self_cond=False,
-        ce_schedule='const'
+        ce_schedule='const',
+        param='eps',
+        t_sampling='uniform',
+        x0_mse_weight=0.0
     ):
         super().__init__()
+        self.param = param
+        self.t_sampling = t_sampling
+        self.x0_mse_weight = x0_mse_weight
+        self.t_bins = min(T_BINS, num_timesteps)
+        if t_sampling == 'warp':  # state lives in buffers so it is checkpointed/resumed; only registered when used (old checkpoints stay loadable)
+            self.register_buffer('t_loss_ema', torch.zeros(self.t_bins))
+            self.register_buffer('t_loss_seen', torch.zeros(self.t_bins, dtype=torch.bool))
         self.self_cond = self_cond
         self.ce_schedule = ce_schedule
         self.cond_prompt = cond_prompt
@@ -527,8 +548,20 @@ class GaussianDiffusion(nn.Module):
     def denoise_model_embed_dim(self, x_t):
         return x_t.shape[-1] - int(self.cond_prompt)
 
-    def x0_estimate(self, x_t, t, eps, target_norm=None):
-        """Detached clean-embedding estimate used as the self-conditioning input (per-position norm rescale)."""
+    def x0_from_logits(self, logits, table):
+        """x0_hat = softmax(logits) @ E: a per-position convex combination of embeddings (E is detached here)."""
+        return F.softmax(logits.float(), dim=-1) @ table.detach().float()
+
+    def eps_from_x0(self, x_t, t, x0):
+        """eps implied by an x0 estimate: (x_t - sqrt(ab) x0) / sqrt(1 - ab)."""
+        return (x_t - extract(self.sqrt_alphas_cumprod, t, x_t.shape) * x0) / extract(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape)
+
+    def x0_estimate(self, x_t, t, eps, target_norm=None, table=None):
+        """Detached clean-embedding estimate used as the self-conditioning input (per-position norm rescale).
+
+        For param=logits `eps` is the network output (logits) and the estimate is softmax(logits) @ E (no rescale)."""
+        if self.param == 'logits':
+            return self.x0_from_logits(eps, table).detach()
         x0 = self.predict_start_from_noise(x_t, t, eps)
         if target_norm is not None:
             x0 = x0 * (target_norm / x0.norm(dim=-1, keepdim=True).clamp(min=1e-8))
@@ -557,12 +590,26 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
     @torch.no_grad()
-    def p_sample(self, x_t_embed, t, t_index, target_norm=None, x0_prev=None, return_x0=False): # t is tensor, t_index is scalar
+    def p_sample(self, x_t_embed, t, t_index, target_norm=None, x0_prev=None, return_x0=False, table=None, return_logits=False):
         """Denoise one step from x_t to x_{t-1}.
+
+        param=logits: x0_hat = softmax(logits) @ table, DDPM posterior q(x_{t-1}|x_t, x0_hat); x0_rescale/target_norm are ignored.
+        Returns out, or (out, x0_hat) with return_x0, or (out, x0_hat, logits) with return_logits.
 
         With x0_rescale: predict x0, rescale every position vector to target_norm (mean real embedding norm),
         then sample from the q(x_{t-1} | x_t, x0_hat) posterior. target_norm is required in that mode.
         """
+        if self.param == 'logits':
+            if table is None:
+                raise ValueError('param=logits sampling needs the embedding table')
+            logits = self.denoise(x_t_embed, t, x0_prev=x0_prev).float()
+            x0_hat = self.x0_from_logits(logits, table)
+            mean, _, log_var = self.q_posterior(x0_hat, x_t_embed, t)
+            out = mean if t_index == 0 else mean + (0.5 * log_var).exp() * torch.randn_like(x_t_embed)
+            if return_logits:
+                return out, x0_hat, logits
+            return (out, x0_hat) if return_x0 else out
+
         if self.x0_rescale:
             if target_norm is None:
                 raise ValueError('x0_rescale sampling needs target_norm (mean embedding norm)')
@@ -593,8 +640,8 @@ class GaussianDiffusion(nn.Module):
         return out
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, target_norm=None):
-        """Generate samples by denoising from T to 0."""
+    def p_sample_loop(self, shape, target_norm=None, table=None, return_logits=False):
+        """Generate samples by denoising from T to 0. param=logits with return_logits returns the last step's logits (b, n, 256)."""
         batch_size = shape[0]
         # Start with random noise
         device = self.betas.device
@@ -603,13 +650,18 @@ class GaussianDiffusion(nn.Module):
         x0_prev = None  # zeros at the first step when self_cond
         for i in reversed(range(0, self.num_timesteps)):
             current_t_tensor = torch.full((batch_size,), i, device=device, dtype=torch.long)
-            if self.self_cond:
+            if self.param == 'logits':
+                x_t_embed, x0_prev, last_logits = self.p_sample(x_t_embed, current_t_tensor, i, x0_prev=x0_prev if self.self_cond else None,
+                                                                 table=table, return_logits=True)
+            elif self.self_cond:
                 x_t_embed, x0_prev = self.p_sample(x_t_embed, current_t_tensor, i, target_norm, x0_prev=x0_prev, return_x0=True)
             else:
                 x_t_embed = self.p_sample(x_t_embed, current_t_tensor, i, target_norm)
 
+        if self.param == 'logits' and return_logits:
+            return last_logits
         # x_t_embed is now approximately x_0_embed
-        if self.clip_denoised and not self.x0_rescale: # Optional: clip to [-1, 1] if embeddings are normalized
+        if self.clip_denoised and not self.x0_rescale and self.param != 'logits': # Optional: clip to [-1, 1] if embeddings are normalized
              x_t_embed = torch.clamp(x_t_embed, -1., 1.)
         return x_t_embed
 
@@ -622,10 +674,64 @@ class GaussianDiffusion(nn.Module):
             extract(self.sqrt_one_minus_alphas_cumprod, t, x_start_embed.shape) * noise
         )
 
-    def p_losses(self, x_start_embed, t, noise=None, x_bytes=None, to_logits_fn=None, clean_mask=None):
+    # --- time warping (t_sampling="warp") ---
+    def t_probs(self):
+        """p(bin): WARP_MIX * normalised EMA loss + (1 - WARP_MIX) * uniform. Unseen bins take the mean seen loss."""
+        nb = self.t_bins
+        if self.t_sampling != 'warp' or not bool(self.t_loss_seen.any()):
+            return torch.full((nb,), 1.0 / nb, device=self.betas.device)
+        e = torch.where(self.t_loss_seen, self.t_loss_ema, self.t_loss_ema[self.t_loss_seen].mean()).clamp(min=0)
+        return WARP_MIX * e / e.sum().clamp(min=1e-12) + (1 - WARP_MIX) / nb
+
+    def sample_t(self, batch_size, device):
+        """Training timesteps. warp: draw a bin from t_probs(), then uniform inside the bin. Deliberately NOT importance-weighted
+        (the loss is reweighted toward hard noise levels on purpose)."""
+        if self.t_sampling != 'warp':
+            return torch.randint(0, self.num_timesteps, (batch_size,), device=device).long()
+        idx = torch.multinomial(self.t_probs().to(device), batch_size, replacement=True)
+        lo, hi = idx * self.num_timesteps // self.t_bins, (idx + 1) * self.num_timesteps // self.t_bins
+        t = lo + (torch.rand(batch_size, device=device) * (hi - lo)).long()
+        return torch.minimum(t, hi - 1).long()
+
+    @torch.no_grad()
+    def update_t_stats(self, t, per_sample_loss):
+        v = per_sample_loss.detach().float()
+        ok = torch.isfinite(v)
+        b = (t * self.t_bins // self.num_timesteps).clamp(max=self.t_bins - 1)
+        sums = torch.zeros_like(self.t_loss_ema).index_add_(0, b[ok], v[ok])
+        cnt = torch.zeros_like(self.t_loss_ema).index_add_(0, b[ok], torch.ones_like(v[ok]))
+        present = cnt > 0
+        mean = sums / cnt.clamp(min=1)
+        new = torch.where(self.t_loss_seen, (1 - WARP_EMA) * self.t_loss_ema + WARP_EMA * mean, mean)
+        self.t_loss_ema.copy_(torch.where(present, new, self.t_loss_ema))
+        self.t_loss_seen.copy_(self.t_loss_seen | present)
+
+    def _logits_losses(self, x_start_embed, x_t_embed, t, noise, logits, x_bytes, w, table):
+        """param=logits: CE(logits, byte) is the loss at every t (no 1/sqrt(ab) factor anywhere)."""
+        logits = logits.float()
+        ce = F.cross_entropy(logits.reshape(-1, logits.size(-1)), x_bytes.reshape(-1), reduction='none').view(logits.shape[:2])
+        wsum = w.sum(1).clamp(min=1)
+        per_sample = (ce * w).sum(1) / wsum
+        loss = per_sample.mean()
+        x0_hat = self.x0_from_logits(logits, table)
+        stats = {'ce_loss': loss.detach(), 'per_sample_loss': per_sample.detach(), 't': t.detach()}
+        if self.x0_mse_weight > 0:  # E (target and mixture table) detached so the term trains the logits only and cannot collapse E
+            mse = (x0_hat - x_start_embed.detach().float()).pow(2).mean(dim=-1)
+            loss = loss + self.x0_mse_weight * ((mse * w).sum(1) / wsum).mean()
+            stats['x0_mse'] = ((mse * w).sum(1) / wsum).mean().detach()
+        # diagnostics comparable with the eps parametrisation: noise-prediction error of the implied eps
+        err = (noise - self.eps_from_x0(x_t_embed.float(), t, x0_hat.detach())).pow(2).mean(dim=-1)
+        ps_noise = ((err * w).sum(1) / wsum).detach()
+        stats.update({'noise_loss': ps_noise.mean(), 'per_sample_noise_loss': ps_noise, 'x0_pred_norm': x0_hat.detach().norm(dim=-1).mean(),
+                      'x_start_norm': x_start_embed.detach().norm(dim=-1).mean(),
+                      'x0_acc': ((logits.argmax(-1) == x_bytes).float() * w).sum().detach() / w.sum().clamp(min=1)})
+        return loss, stats
+
+    def p_losses(self, x_start_embed, t, noise=None, x_bytes=None, to_logits_fn=None, clean_mask=None, table=None):
         """Returns (loss, stats). stats holds detached per-component diagnostics.
 
-        clean_mask (b, n) bool (cond_prompt only): True positions are fed clean, are not noised and carry no loss."""
+        clean_mask (b, n) bool (cond_prompt only): True positions are fed clean, are not noised and carry no loss.
+        param=logits needs x_bytes and the embedding table; stats['per_sample_loss'] is the per-example training loss."""
         noise = default(noise, lambda: torch.randn_like(x_start_embed))
         if clean_mask is None and self.cond_prompt and self.training:
             clean_mask = self.sample_clean_mask(x_start_embed.shape[0], x_start_embed.device)
@@ -635,15 +741,25 @@ class GaussianDiffusion(nn.Module):
         x_t_embed = self.q_sample(x_start_embed, t, noise=noise)
         if clean_mask is not None:
             x_t_embed = torch.where(clean_mask.unsqueeze(-1), x_start_embed, x_t_embed)
+        logits_mode = self.param == 'logits'
+        if logits_mode and (x_bytes is None or table is None):
+            raise ValueError('param=logits training needs x_bytes and the embedding table')
         x0_prev = None
         if self.self_cond:
             with torch.no_grad():
                 eps0 = self.denoise(x_t_embed, t, clean_mask, x0_prev=None)
                 tn = x_start_embed.detach().norm(dim=-1).mean()
-                x0_prev = self.x0_estimate(x_t_embed, t, eps0, tn)
+                x0_prev = self.x0_estimate(x_t_embed, t, eps0, tn, table=table)
                 keep = (torch.rand(x_start_embed.shape[0], device=x_start_embed.device) >= 0.5).to(x0_prev.dtype)
                 x0_prev = x0_prev * keep[:, None, None]  # prob 0.5 per example: zeros
         predicted_noise = self.denoise(x_t_embed, t, clean_mask, x0_prev=x0_prev)
+
+        if logits_mode:
+            w = torch.ones(x_bytes.shape, device=x_bytes.device) if clean_mask is None else (~clean_mask).float()
+            loss, stats = self._logits_losses(x_start_embed, x_t_embed, t, noise, predicted_noise, x_bytes, w, table)
+            if self.training and self.t_sampling == 'warp':
+                self.update_t_stats(t, stats['per_sample_loss'])
+            return loss, stats
 
         if self.loss_type == 'l1':
             err = (noise - predicted_noise).abs().mean(dim=-1)
@@ -659,7 +775,8 @@ class GaussianDiffusion(nn.Module):
         noise_loss = per_sample.mean()
         loss = noise_loss
 
-        stats = {'noise_loss': noise_loss.detach(), 't': t.detach(), 'per_sample_noise_loss': per_sample.detach()}
+        stats = {'noise_loss': noise_loss.detach(), 't': t.detach(), 'per_sample_noise_loss': per_sample.detach(),
+                 'per_sample_loss': per_sample.detach()}
 
         if x_bytes is not None and to_logits_fn is not None:
             x0_pred = self.predict_start_from_noise(x_t_embed, t, predicted_noise)
@@ -674,14 +791,16 @@ class GaussianDiffusion(nn.Module):
             stats['ce_loss'] = ce_loss.detach()
             stats['x0_pred_norm'] = x0_pred.detach().norm(dim=-1).mean()
         stats['x_start_norm'] = x_start_embed.detach().norm(dim=-1).mean()
+        if self.training and self.t_sampling == 'warp':
+            self.update_t_stats(t, per_sample)
 
         return loss, stats
 
-    def forward(self, x_start_embed, x_bytes=None, to_logits_fn=None, t=None, noise=None, clean_mask=None):
+    def forward(self, x_start_embed, x_bytes=None, to_logits_fn=None, t=None, noise=None, clean_mask=None, table=None):
         batch_size = x_start_embed.shape[0]
         if t is None:
-            t = torch.randint(0, self.num_timesteps, (batch_size,), device=x_start_embed.device).long()
-        return self.p_losses(x_start_embed, t, noise=noise, x_bytes=x_bytes, to_logits_fn=to_logits_fn, clean_mask=clean_mask)
+            t = self.sample_t(batch_size, x_start_embed.device)
+        return self.p_losses(x_start_embed, t, noise=noise, x_bytes=x_bytes, to_logits_fn=to_logits_fn, clean_mask=clean_mask, table=table)
 
 
 # --- Data Loading ---
@@ -728,18 +847,19 @@ class ByteDiffusionLM(nn.Module):
         validate(cfg)
         m, d = cfg.model, cfg.diffusion
         self.cfg = cfg
-        self.byte_embedder = ByteEmbedding(m.vocab_size, m.byte_embed_dim)
+        self.byte_embedder = ByteEmbedding(m.vocab_size, m.byte_embed_dim, m.embed_norm)
+        out_dim = m.vocab_size if d.param == 'logits' else m.byte_embed_dim  # logits head: one logit per byte
 
         if m.denoiser == "birnn":  # attribute keeps the name denoise_unet so state_dict keys stay uniform
             self.denoise_unet = BiRNNDenoiser(m.model_dim, m.byte_embed_dim + int(d.cond_prompt), m.rnn_layers, m.rnn_conv, m.rnn_ffn_mult,
-                                              m.dropout, out_dim=m.byte_embed_dim)
+                                              m.dropout, out_dim=out_dim)
         elif m.denoiser == "hybrid":
-            self.denoise_unet = HybridDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + int(d.cond_prompt), m.byte_embed_dim)
+            self.denoise_unet = HybridDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + int(d.cond_prompt), out_dim)
         else:
             self.denoise_unet = UNet1D(
                 model_dim=m.model_dim,
                 in_embed_dim=m.byte_embed_dim * (1 + int(d.self_cond)) + int(d.cond_prompt),
-                out_dim=m.byte_embed_dim,
+                out_dim=out_dim,
                 dim_mults=m.dim_mults,
                 time_emb_dim_mult=m.time_emb_mult,
                 resnet_groups=m.resnet_groups,
@@ -762,24 +882,32 @@ class ByteDiffusionLM(nn.Module):
             cond_prompt=d.cond_prompt,
             self_cond=d.self_cond,
             ce_schedule=d.ce_schedule,
+            param=d.param,
+            t_sampling=d.t_sampling,
+            x0_mse_weight=d.x0_mse_weight,
         )
 
+    def embedding_table(self):
+        return self.byte_embedder.table()
+
     def get_logits(self, x):
-        return F.linear(x, self.byte_embedder.embedding.weight)
+        return F.linear(x, self.embedding_table())
 
     def forward(self, x_bytes, t=None, noise=None, clean_mask=None):
         """Training forward pass: returns (loss, stats)."""
         x_start_embed = self.byte_embedder(x_bytes)
         return self.gaussian_diffusion(x_start_embed, x_bytes=x_bytes, to_logits_fn=self.get_logits, t=t, noise=noise,
-                                       clean_mask=clean_mask)
+                                       clean_mask=clean_mask, table=self.embedding_table())
 
     def mean_embed_norm(self):
-        return self.byte_embedder.embedding.weight.detach().norm(dim=-1).mean().item()
+        return self.embedding_table().detach().norm(dim=-1).mean().item()
 
     @torch.no_grad()
     def sample(self, batch_size=1):
         self.eval()
         shape = (batch_size, self.gaussian_diffusion.seq_len, self.byte_embedder.embedding.embedding_dim)
+        if self.gaussian_diffusion.param == 'logits':  # final decode: argmax of the last step's logits
+            return torch.argmax(self.gaussian_diffusion.p_sample_loop(shape, table=self.embedding_table().detach(), return_logits=True), dim=-1)
         x0_embed_predicted = self.gaussian_diffusion.p_sample_loop(shape, target_norm=self.mean_embed_norm())
         logits = self.get_logits(x0_embed_predicted)
         return torch.argmax(logits, dim=-1)

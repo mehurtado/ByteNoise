@@ -191,7 +191,7 @@ def quick_eval(model, cfg, val_tokens, device, n_batches):
             _, s = model(x, t=t, noise=noise)
             noise_sum += float(s["noise_loss"]) * x.size(0)
             ce_sum += float(s.get("ce_loss", 0.0)) * x.size(0)
-            a, b = bucket_losses(s["t"], s["per_sample_noise_loss"], T, nb)
+            a, b = bucket_losses(s["t"], s.get("per_sample_loss", s["per_sample_noise_loss"]), T, nb)  # logits: CE nats/byte
             bsum += a
             bcnt += b
         out = {"val_noise_loss": noise_sum / n, "val_ce_loss": ce_sum / n,
@@ -370,7 +370,7 @@ def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None,
                     row[which + k] = v
         with open(metrics_path, "a") as f:
             f.write(json.dumps(row) + "\n")
-        key = "val_bpb" if cfg.arch != "diffusion" else "val_noise_loss"
+        key = "val_bpb" if cfg.arch != "diffusion" else ("val_ce_loss" if cfg.diffusion.param == "logits" else "val_noise_loss")
         say(f"  eval @ {progress['updates']}: raw {row[key]:.4f}  ema {row['ema_' + key]:.4f}  ({key})")
         return row
 
@@ -436,7 +436,7 @@ def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None,
                 nb = t.noise_buckets
                 bsum, bcnt = torch.zeros(nb), torch.zeros(nb)
                 for s in stats:
-                    a, b = bucket_losses(s["t"], s["per_sample_noise_loss"], cfg.diffusion.num_timesteps, nb)
+                    a, b = bucket_losses(s["t"], s.get("per_sample_loss", s["per_sample_noise_loss"]), cfg.diffusion.num_timesteps, nb)  # logits: CE nats/byte
                     bsum += a
                     bcnt += b
                 row["bucket_noise_loss"] = [(bsum[i] / bcnt[i]).item() if bcnt[i] > 0 else None for i in range(nb)]
@@ -535,12 +535,17 @@ def _coerce(cur, v):
 
 
 def apply_set_items(cfg, items):
-    """Parse --set items. `diffusion.<key>=v` is applied to cfg.diffusion; others are returned as TrainConfig overrides."""
+    """Parse --set items. `model.<key>=v` / `diffusion.<key>=v` are applied to cfg.model / cfg.diffusion; others are returned as TrainConfig overrides."""
     import dataclasses
     tov = {}
     for item in items:
         k, v = item.split("=", 1)
-        if k.startswith("diffusion."):
+        if k.startswith("model."):
+            k = k[len("model."):]
+            if not hasattr(cfg.model, k):
+                raise ValueError(f"unknown model key: {k}")
+            cfg = dataclasses.replace(cfg, model=dataclasses.replace(cfg.model, **{k: _coerce(getattr(cfg.model, k), v)}))
+        elif k.startswith("diffusion."):
             k = k[len("diffusion."):]
             if not hasattr(cfg.diffusion, k):
                 raise ValueError(f"unknown diffusion key: {k}")
