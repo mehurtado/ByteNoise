@@ -9,3 +9,4 @@ runs/
 data/*/*.bin
 data/raw/
 runs/
+data/ngram_*.pkl
