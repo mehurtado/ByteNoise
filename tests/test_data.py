@@ -346,3 +346,25 @@ def test_write_splits_manifest_hashes(tmp_path, monkeypatch):
     m = data._write_splits(str(tmp_path / "d"), {"train": b"abc", "val": b"de", "test": b"f"}, {"name": "d"})
     assert m["splits"]["train"] == {"bytes": 3, "sha256": hashlib.sha256(b"abc").hexdigest()}
     assert (tmp_path / "d" / "val.bin").read_bytes() == b"de"
+
+
+# ---------------------------------------------------------------- natural-v2 (skipped when datasets are not prepared)
+
+_V1, _V2 = os.path.join(data.DATA_ROOT, "natural-v1"), os.path.join(data.DATA_ROOT, "natural-v2")
+
+
+@pytest.mark.skipif(not (os.path.exists(os.path.join(_V1, "manifest.json")) and os.path.exists(os.path.join(_V2, "manifest.json"))),
+                    reason="natural-v1/v2 not prepared")
+def test_natural_v2_val_test_identical_and_no_leakage():
+    for s in ("val", "test"):
+        assert data.sha256_file(os.path.join(_V1, f"{s}.bin")) == data.sha256_file(os.path.join(_V2, f"{s}.bin"))
+    assert data.read_manifest("natural-v2")["val_test_identical_to_base"] == {"val": True, "test": True}
+    assert data.load_split("natural-v2", "train").numel() > data.load_split("natural-v1", "train").numel()
+    keys = {}
+    for s in ("train", "val", "test"):
+        text = open(os.path.join(_V2, f"{s}.bin"), "rb").read().decode("utf-8")
+        keys[s] = {k for p in data._paragraphs(text) if len(k := data._norm_para(p)) >= 60}
+    assert not keys["train"] & keys["val"] and not keys["train"] & keys["test"] and not keys["val"] & keys["test"]
+    m = data.read_manifest("natural-v2")
+    assert {d["id"] for d in m["documents"] if d["split"] == "train"}.isdisjoint(
+        {d["id"] for d in m["documents"] if d["split"] != "train"})

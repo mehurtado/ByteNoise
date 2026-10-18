@@ -124,3 +124,7 @@ Latency 1.2-1.3 s/sample at batch 32 (U-Net 0.4-0.9). Samples (both): lowercase 
 | late500 s=0.5 / 0.25 | - | 0.463 / 0.481 | 0.61 |
 
 Verdict: respacing alone does nothing to word_hit (but 250 steps is 4x faster at equal quality). Lowering noise helps only the hybrid+selfcond model (+0.07 at s=0.8, +0.14 at s=0.5, 0.45-0.49 for s<=0.5, valid UTF-8 -> 1.0), at the cost of diversity (distinct_4gram 0.97 -> 0.89 at s=0.5, repeats appear at 0.25); sample text is still non-words/garbled ("ene her ane fovesee as an is of alich"), so part of the gain is more common short words, not real language. U-Net gate: nothing meaningful (best 0.385 at uni250 s=0.8, +0.03, noise). Single seed.
+
+## natural-v2 dataset (larger Gutenberg train set)
+
+`python data.py prepare gutenberg-v2` builds `data/natural-v2` (use `train.py --data natural-v2`). Train = natural-v1 train (57 docs' train share) + 278 extra English Gutenberg books (prose; catalogue-filtered, hash-ordered candidates, 1 s politeness delay) forced into train only; val/test are byte copies of natural-v1's (sha256 match recorded in the manifest as `val_test_identical_to_base`, and checked by tests/test_data.py). Extra paragraphs duplicating any v1 train/val/test paragraph (or each other) were dropped (836 total). Sizes: train 160,286,597 B (v1: 43.7 MB), val 2,281,541 B, test 5,175,949 B. 65 candidates skipped (64 under 100k chars, 1 download error). Scores on val/test remain directly comparable with natural-v1 runs.

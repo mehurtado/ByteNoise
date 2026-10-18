@@ -178,6 +178,106 @@ def prepare_gutenberg(name="natural-v1", ids=None, cache_dir=None):
     return _write_splits(os.path.join(DATA_ROOT, name), splits, manifest)
 
 
+def _v2_candidates(cache_dir):
+    """Deterministic candidate order of English prose ids from the Gutenberg catalogue (downloaded once, cached)."""
+    import csv
+    path = os.path.join(os.path.dirname(cache_dir), "pg_catalog.csv")
+    if not os.path.exists(path):
+        req = urllib.request.Request("https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv", headers={"User-Agent": "ByteNoise-research/0.1"})
+        with urllib.request.urlopen(req, timeout=120) as r:
+            raw = r.read()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(raw)
+    bad = ("poetry", "drama", "periodicals", "dictionar", "encyclopedia", "catalog", "bibliograph", "songs", "hymns", "music")
+    ids = []
+    with open(path, encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            try:
+                i = int(row["Text#"])
+            except ValueError:
+                continue
+            blob = (row["Subjects"] + " " + row["Bookshelves"]).lower()
+            if row["Type"] != "Text" or row["Language"] != "en" or i > 75000 or any(b in blob for b in bad):
+                continue
+            if "various" in row["Authors"].lower() or not row["Authors"].strip():
+                continue
+            ids.append(i)
+    return sorted(ids, key=lambda i: hashlib.sha256(f"bytenoise-v2-candidate-{i}".encode()).hexdigest())
+
+
+def prepare_gutenberg_v2(name="natural-v2", base="natural-v1", target_train_bytes=160_000_000, max_candidates=1500, delay=1.0, cache_dir=None):
+    """natural-v1 plus extra Gutenberg books in TRAIN only. val/test are byte copies of v1's (same documents, same
+    paragraphs). Extra paragraphs duplicating anything in v1 train/val/test (or earlier extra paragraphs) are dropped."""
+    cache_dir = cache_dir or os.path.join(DATA_ROOT, "raw", "gutenberg")
+    bdir = os.path.join(DATA_ROOT, base)
+    bm = read_manifest(base)
+    blobs = {s: open(os.path.join(bdir, f"{s}.bin"), "rb").read() for s in ("train", "val", "test")}
+    for s, b in blobs.items():
+        assert hashlib.sha256(b).hexdigest() == bm["splits"][s]["sha256"], f"{base}/{s}.bin does not match its manifest"
+    seen = {k for b in blobs.values() for p in _paragraphs(b.decode("utf-8")) if len(k := _norm_para(p)) >= 60}
+    taken = {d["id"] for d in bm["documents"]} | {d["id"] for d in bm["skipped"]}
+    titles = {re.sub(r"\W+", " ", d["title"].lower()).strip() for d in bm["documents"]}
+    train_parts, docs, skipped, total = [], {}, [], len(blobs["train"])
+    tried = 0
+    for book_id in _v2_candidates(cache_dir):
+        if total >= target_train_bytes or tried >= max_candidates:
+            break
+        if book_id in taken:
+            continue
+        tried += 1
+        cached = os.path.exists(os.path.join(cache_dir, f"pg{book_id}.txt"))
+        try:
+            meta, body = _parse_gutenberg(_fetch_gutenberg(book_id, cache_dir))
+        except Exception as e:
+            skipped.append({"id": book_id, "reason": f"download failed: {type(e).__name__}"})
+            time.sleep(delay * 5)
+            continue
+        if not cached:
+            time.sleep(delay)
+        if meta["language"] and meta["language"].lower() != "english":
+            skipped.append({"id": book_id, "reason": f"language {meta['language']}"})
+            continue
+        if len(body) < 100000:
+            skipped.append({"id": book_id, "reason": "too short (<100k chars)"})
+            continue
+        tkey = re.sub(r"\W+", " ", meta["title"].lower()).strip()
+        if tkey in titles:
+            skipped.append({"id": book_id, "reason": f"duplicate title {meta['title']!r}"})
+            continue
+        titles.add(tkey)
+        kept, dropped = [], 0
+        for p in _paragraphs(body):
+            key = _norm_para(p)
+            if len(key) >= 60:
+                if key in seen:
+                    dropped += 1
+                    continue
+                seen.add(key)
+            kept.append(p)
+        part = ("\n\n".join(kept) + "\n").encode("utf-8")
+        train_parts.append(part)
+        total += len(part) + 1
+        docs[book_id] = {"id": book_id, "title": meta["title"], "author": meta["author"], "split": "train", "chars": len(body), "dropped_duplicate_paragraphs": dropped}
+    train = blobs["train"] + b"\n" + b"\n".join(train_parts)
+    manifest = {
+        "name": name, "kind": "natural_text", "source": "Project Gutenberg (public domain), https://www.gutenberg.org",
+        "base": base, "extra_selection": "English prose from pg_catalog.csv (no poetry/drama/periodicals/reference, authors != Various, id<=75000), "
+                                         "candidate order by sha256('bytenoise-v2-candidate-<id>'), added until train >= target bytes",
+        "split_policy": f"val/test are byte-identical copies of {base} val/test; train = {base} train + extra books forced into train; "
+                        "extra paragraphs (whitespace/case-normalised, >=60 chars) duplicating any paragraph of base train/val/test or earlier extras are dropped",
+        "target_train_bytes": target_train_bytes, "candidates_tried": tried,
+        "documents": bm["documents"] + [docs[i] for i in sorted(docs)],
+        "base_documents": len(bm["documents"]), "extra_documents": len(docs), "skipped": bm["skipped"] + skipped, "extra_skipped": skipped,
+    }
+    manifest = _write_splits(os.path.join(DATA_ROOT, name), {"train": train, "val": blobs["val"], "test": blobs["test"]}, manifest)
+    manifest["val_test_identical_to_base"] = {s: manifest["splits"][s]["sha256"] == bm["splits"][s]["sha256"] for s in ("val", "test")}
+    assert all(manifest["val_test_identical_to_base"].values())
+    with open(os.path.join(DATA_ROOT, name, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=2)
+    return manifest
+
+
 # --- Dummy (smoke test) ---
 
 def prepare_dummy(name="dummy-v1", src=os.path.join(ROOT, "dataset", "USE")):
@@ -220,11 +320,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("prepare")
-    p.add_argument("kind", choices=["gutenberg", "dummy", "tasks"])
+    p.add_argument("kind", choices=["gutenberg", "gutenberg-v2", "dummy", "tasks"])
     a = ap.parse_args(argv)
-    fn = {"gutenberg": prepare_gutenberg, "dummy": prepare_dummy, "tasks": prepare_tasks}[a.kind]
+    fn = {"gutenberg": prepare_gutenberg, "gutenberg-v2": prepare_gutenberg_v2, "dummy": prepare_dummy, "tasks": prepare_tasks}[a.kind]
     m = fn()
-    print(json.dumps({"name": m["name"], "splits": m["splits"], **({"docs": len(m["documents"]), "skipped": len(m["skipped"]), "dedup": m["dedup"]} if "documents" in m else {})}, indent=1))
+    print(json.dumps({"name": m["name"], "splits": m["splits"], **({"docs": len(m["documents"]), "skipped": len(m["skipped"]), "dedup": m.get("dedup")} if "documents" in m else {})}, indent=1))
 
 
 if __name__ == "__main__":
