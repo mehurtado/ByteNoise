@@ -1,0 +1,3193 @@
+{
+  "name": "natural-v2",
+  "kind": "natural_text",
+  "source": "Project Gutenberg (public domain), https://www.gutenberg.org",
+  "base": "natural-v1",
+  "extra_selection": "English prose from pg_catalog.csv (no poetry/drama/periodicals/reference, authors != Various, id<=75000), candidate order by sha256('bytenoise-v2-candidate-<id>'), added until train >= target bytes",
+  "split_policy": "val/test are byte-identical copies of natural-v1 val/test; train = natural-v1 train + extra books forced into train; extra paragraphs (whitespace/case-normalised, >=60 chars) duplicating any paragraph of base train/val/test or earlier extras are dropped",
+  "target_train_bytes": 160000000,
+  "candidates_tried": 343,
+  "documents": [
+    {
+      "id": 10,
+      "title": "The King James Version of the Bible",
+      "author": "",
+      "split": "train",
+      "chars": 4332583
+    },
+    {
+      "id": 11,
+      "title": "Alice's Adventures in Wonderland",
+      "author": "Lewis Carroll",
+      "split": "train",
+      "chars": 144599
+    },
+    {
+      "id": 16,
+      "title": "Peter Pan",
+      "author": "J. M. Barrie",
+      "split": "train",
+      "chars": 255583
+    },
+    {
+      "id": 35,
+      "title": "The Time Machine",
+      "author": "H. G. Wells",
+      "split": "train",
+      "chars": 179698
+    },
+    {
+      "id": 36,
+      "title": "The war of the worlds",
+      "author": "H. G. Wells",
+      "split": "train",
+      "chars": 337423
+    },
+    {
+      "id": 41,
+      "title": "The Legend of Sleepy Hollow",
+      "author": "Washington Irving",
+      "split": "train",
+      "chars": 69758
+    },
+    {
+      "id": 43,
+      "title": "The strange case of Dr. Jekyll and Mr. Hyde",
+      "author": "Robert Louis Stevenson",
+      "split": "val",
+      "chars": 138814
+    },
+    {
+      "id": 45,
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery",
+      "split": "val",
+      "chars": 561143
+    },
+    {
+      "id": 46,
+      "title": "A Christmas Carol in Prose; Being a Ghost Story of Christmas",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 158414
+    },
+    {
+      "id": 55,
+      "title": "The Wonderful Wizard of Oz",
+      "author": "L. Frank Baum",
+      "split": "train",
+      "chars": 207817
+    },
+    {
+      "id": 64,
+      "title": "The gods of Mars",
+      "author": "Edgar Rice Burroughs",
+      "split": "train",
+      "chars": 450442
+    },
+    {
+      "id": 74,
+      "title": "The Adventures of Tom Sawyer, Complete",
+      "author": "Mark Twain",
+      "split": "train",
+      "chars": 392732
+    },
+    {
+      "id": 76,
+      "title": "Adventures of Huckleberry Finn",
+      "author": "Mark Twain",
+      "split": "test",
+      "chars": 571052
+    },
+    {
+      "id": 84,
+      "title": "Frankenstein; or, the modern prometheus",
+      "author": "Mary Wollstonecraft Shelley",
+      "split": "val",
+      "chars": 419336
+    },
+    {
+      "id": 98,
+      "title": "A Tale of Two Cities",
+      "author": "Charles Dickens",
+      "split": "test",
+      "chars": 757604
+    },
+    {
+      "id": 103,
+      "title": "Around the World in Eighty Days",
+      "author": "Jules Verne",
+      "split": "train",
+      "chars": 369188
+    },
+    {
+      "id": 108,
+      "title": "The Return of Sherlock Holmes",
+      "author": "Arthur Conan Doyle",
+      "split": "train",
+      "chars": 673677
+    },
+    {
+      "id": 120,
+      "title": "Treasure Island",
+      "author": "Robert Louis Stevenson",
+      "split": "train",
+      "chars": 364519
+    },
+    {
+      "id": 135,
+      "title": "Les Mis\u00e9rables",
+      "author": "Victor Hugo",
+      "split": "train",
+      "chars": 3231377
+    },
+    {
+      "id": 158,
+      "title": "Emma",
+      "author": "Jane Austen",
+      "split": "train",
+      "chars": 880424
+    },
+    {
+      "id": 161,
+      "title": "Sense and Sensibility",
+      "author": "Jane Austen",
+      "split": "train",
+      "chars": 670674
+    },
+    {
+      "id": 174,
+      "title": "The Picture of Dorian Gray",
+      "author": "Oscar Wilde",
+      "split": "train",
+      "chars": 429312
+    },
+    {
+      "id": 205,
+      "title": "Walden, and On The Duty Of Civil Disobedience",
+      "author": "Henry David Thoreau",
+      "split": "train",
+      "chars": 634786
+    },
+    {
+      "id": 215,
+      "title": "The call of the wild",
+      "author": "Jack London",
+      "split": "test",
+      "chars": 175590
+    },
+    {
+      "id": 219,
+      "title": "Heart of Darkness",
+      "author": "Joseph Conrad",
+      "split": "train",
+      "chars": 209894
+    },
+    {
+      "id": 244,
+      "title": "A Study in Scarlet",
+      "author": "Arthur Conan Doyle",
+      "split": "train",
+      "chars": 239426
+    },
+    {
+      "id": 345,
+      "title": "Dracula",
+      "author": "Bram Stoker",
+      "split": "train",
+      "chars": 845889
+    },
+    {
+      "id": 514,
+      "title": "Little Women",
+      "author": "Louisa May Alcott",
+      "split": "train",
+      "chars": 1007151
+    },
+    {
+      "id": 521,
+      "title": "The Life and Adventures of Robinson Crusoe",
+      "author": "Daniel Defoe",
+      "split": "train",
+      "chars": 621520
+    },
+    {
+      "id": 730,
+      "title": "Oliver Twist",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 893160
+    },
+    {
+      "id": 766,
+      "title": "David Copperfield",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 1934726
+    },
+    {
+      "id": 768,
+      "title": "Wuthering Heights",
+      "author": "Emily Bront\u00eb",
+      "split": "train",
+      "chars": 645605
+    },
+    {
+      "id": 829,
+      "title": "Gulliver's Travels into Several Remote Nations of the World",
+      "author": "Jonathan Swift",
+      "split": "val",
+      "chars": 582410
+    },
+    {
+      "id": 996,
+      "title": "Don Quixote",
+      "author": "Miguel de Cervantes Saavedra",
+      "split": "train",
+      "chars": 2299289
+    },
+    {
+      "id": 1023,
+      "title": "Bleak House",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 1939456
+    },
+    {
+      "id": 1184,
+      "title": "The Count of Monte Cristo",
+      "author": "Alexandre Dumas",
+      "split": "test",
+      "chars": 2627256
+    },
+    {
+      "id": 1232,
+      "title": "The Prince",
+      "author": "Niccol\u00f2 Machiavelli",
+      "split": "train",
+      "chars": 282635
+    },
+    {
+      "id": 1257,
+      "title": "The three musketeers",
+      "author": "Alexandre Dumas",
+      "split": "train",
+      "chars": 1297963
+    },
+    {
+      "id": 1260,
+      "title": "Jane Eyre: An Autobiography",
+      "author": "Charlotte Bront\u00eb",
+      "split": "train",
+      "chars": 1022379
+    },
+    {
+      "id": 1322,
+      "title": "Leaves of Grass",
+      "author": "Walt Whitman",
+      "split": "test",
+      "chars": 738051
+    },
+    {
+      "id": 1342,
+      "title": "Pride and Prejudice",
+      "author": "Jane Austen",
+      "split": "train",
+      "chars": 728713
+    },
+    {
+      "id": 1399,
+      "title": "Anna Karenina",
+      "author": "graf Leo Tolstoy",
+      "split": "train",
+      "chars": 1964765
+    },
+    {
+      "id": 1400,
+      "title": "Great Expectations",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 994616
+    },
+    {
+      "id": 1497,
+      "title": "The Republic",
+      "author": "Plato",
+      "split": "train",
+      "chars": 1194443
+    },
+    {
+      "id": 1661,
+      "title": "The Adventures of Sherlock Holmes",
+      "author": "Arthur Conan Doyle",
+      "split": "train",
+      "chars": 562202
+    },
+    {
+      "id": 1952,
+      "title": "The Yellow Wallpaper",
+      "author": "Charlotte Perkins Gilman",
+      "split": "val",
+      "chars": 31497
+    },
+    {
+      "id": 2009,
+      "title": "The Origin of Species by Means of Natural Selection",
+      "author": "Charles Darwin",
+      "split": "train",
+      "chars": 1257090
+    },
+    {
+      "id": 2148,
+      "title": "The Works of Edgar Allan Poe \u2014 Volume 2",
+      "author": "Edgar Allan Poe",
+      "split": "train",
+      "chars": 602107
+    },
+    {
+      "id": 2554,
+      "title": "Crime and Punishment",
+      "author": "Fyodor Dostoyevsky",
+      "split": "train",
+      "chars": 1135108
+    },
+    {
+      "id": 2591,
+      "title": "Grimms' Fairy Tales",
+      "author": "Jacob Grimm",
+      "split": "val",
+      "chars": 520810
+    },
+    {
+      "id": 2600,
+      "title": "War and Peace",
+      "author": "graf Leo Tolstoy",
+      "split": "train",
+      "chars": 3208272
+    },
+    {
+      "id": 2701,
+      "title": "Moby Dick; Or, The Whale",
+      "author": "Herman Melville",
+      "split": "train",
+      "chars": 1218973
+    },
+    {
+      "id": 2814,
+      "title": "Dubliners",
+      "author": "James Joyce",
+      "split": "train",
+      "chars": 369786
+    },
+    {
+      "id": 3207,
+      "title": "Leviathan",
+      "author": "Thomas Hobbes",
+      "split": "train",
+      "chars": 1212462
+    },
+    {
+      "id": 3825,
+      "title": "Pygmalion",
+      "author": "Bernard Shaw",
+      "split": "test",
+      "chars": 188306
+    },
+    {
+      "id": 4300,
+      "title": "Ulysses",
+      "author": "James Joyce",
+      "split": "train",
+      "chars": 1519707
+    },
+    {
+      "id": 5200,
+      "title": "Metamorphosis",
+      "author": "Franz Kafka",
+      "split": "train",
+      "chars": 118415
+    },
+    {
+      "id": 111,
+      "title": "Freckles",
+      "author": "Gene Stratton-Porter",
+      "split": "train",
+      "chars": 443426,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 365,
+      "title": "The Land of Little Rain",
+      "author": "Mary Austin",
+      "split": "train",
+      "chars": 196573,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 530,
+      "title": "Driven from Home; Or, Carl Crawford's Experience",
+      "author": "Jr. Horatio Alger",
+      "split": "train",
+      "chars": 286838,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 650,
+      "title": "Pictures from Italy",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 416710,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 713,
+      "title": "Memoirs of Extraordinary Popular Delusions \u2014 Volume 2",
+      "author": "Charles Mackay",
+      "split": "train",
+      "chars": 580050,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 1143,
+      "title": "Notes on Life & Letters",
+      "author": "Joseph Conrad",
+      "split": "train",
+      "chars": 449650,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 1329,
+      "title": "A Voyage to Arcturus",
+      "author": "David Lindsay",
+      "split": "train",
+      "chars": 528410,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 1493,
+      "title": "The Legends of the Jews \u2014 Volume 1",
+      "author": "Louis Ginzberg",
+      "split": "train",
+      "chars": 695169,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 1986,
+      "title": "Life and Death of Mr. Badman",
+      "author": "John Bunyan",
+      "split": "train",
+      "chars": 409218,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 2416,
+      "title": "The house of pride, and other tales of Hawaii",
+      "author": "Jack London",
+      "split": "train",
+      "chars": 169727,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 2723,
+      "title": "A First Family of Tasajara",
+      "author": "Bret Harte",
+      "split": "train",
+      "chars": 329094,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 2801,
+      "title": "The Commonwealth of Oceana",
+      "author": "James Harrington",
+      "split": "train",
+      "chars": 640222,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 2955,
+      "title": "The Memoirs of Jacques Casanova de Seingalt, 1725-1798. Volume 05: Milan and Mantua",
+      "author": "Giacomo Casanova",
+      "split": "train",
+      "chars": 152014,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 2964,
+      "title": "The Memoirs of Jacques Casanova de Seingalt, 1725-1798. Volume 14: Switzerland",
+      "author": "Giacomo Casanova",
+      "split": "train",
+      "chars": 256279,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 2967,
+      "title": "The Memoirs of Jacques Casanova de Seingalt, 1725-1798. Volume 17: Return to Italy",
+      "author": "Giacomo Casanova",
+      "split": "train",
+      "chars": 162784,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 3372,
+      "title": "Their Silver Wedding Journey \u2014 Volume 2",
+      "author": "William Dean Howells",
+      "split": "train",
+      "chars": 241428,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 3462,
+      "title": "More Hunting Wasps",
+      "author": "Jean-Henri Fabre",
+      "split": "train",
+      "chars": 446637,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 3668,
+      "title": "The Albert N'Yanza, Great Basin of the Nile, And Explorations of the Nile Sources",
+      "author": "Sir Samuel White Baker",
+      "split": "train",
+      "chars": 1003955,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 3826,
+      "title": "Rise of the New West, 1819-1829",
+      "author": "Frederick Jackson Turner",
+      "split": "train",
+      "chars": 528264,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 4220,
+      "title": "An Autobiography",
+      "author": "Catherine Helen Spence",
+      "split": "train",
+      "chars": 390501,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 4822,
+      "title": "The Rise of the Dutch Republic \u2014 Volume 21: 1573-74",
+      "author": "John Lothrop Motley",
+      "split": "train",
+      "chars": 135252,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 5540,
+      "title": "A Thorny Path \u2014 Volume 11",
+      "author": "Georg Ebers",
+      "split": "train",
+      "chars": 109532,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 5544,
+      "title": "In the Fire of the Forge: A Romance of Old Nuremberg \u2014 Volume 02",
+      "author": "Georg Ebers",
+      "split": "train",
+      "chars": 100908,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 5734,
+      "title": "Life in the Grey Nunnery at Montreal",
+      "author": "Sarah J. Richardson",
+      "split": "train",
+      "chars": 571839,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 5776,
+      "title": "100%: the Story of a Patriot",
+      "author": "Upton Sinclair",
+      "split": "train",
+      "chars": 530786,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6007,
+      "title": "The Two Sides of the Shield",
+      "author": "Charlotte M. Yonge",
+      "split": "train",
+      "chars": 553691,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6288,
+      "title": "You Never Know Your Luck; being the story of a matrimonial deserter. Complete",
+      "author": "Gilbert Parker",
+      "split": "train",
+      "chars": 341899,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 6388,
+      "title": "The Lives of the Twelve Caesars, Volume 03: Tiberius",
+      "author": "Suetonius",
+      "split": "train",
+      "chars": 142299,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6479,
+      "title": "Lady Mary and Her Nurse; Or, A Peep into the Canadian Forest",
+      "author": "Catharine Parr Strickland Traill",
+      "split": "train",
+      "chars": 236652,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6746,
+      "title": "The Grey Fairy Book",
+      "author": "",
+      "split": "train",
+      "chars": 513002,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 6809,
+      "title": "The Doctor's Daughter",
+      "author": "Vera",
+      "split": "train",
+      "chars": 491517,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6876,
+      "title": "The British Association's Visit to Montreal, 1884 : Letters",
+      "author": "Lady Clara Rayleigh",
+      "split": "train",
+      "chars": 217973,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6932,
+      "title": "Pictures Every Child Should Know",
+      "author": "Mary Schell Hoke Bacon",
+      "split": "train",
+      "chars": 502574,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6935,
+      "title": "The Radio Amateur's Hand Book",
+      "author": "A. Frederick Collins",
+      "split": "train",
+      "chars": 393270,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6989,
+      "title": "Ancient Rome : from the earliest times down to 476 A. D.",
+      "author": "Robert F. Pennell",
+      "split": "train",
+      "chars": 409005,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 6991,
+      "title": "Across the Years",
+      "author": "Eleanor H. Porter",
+      "split": "train",
+      "chars": 303531,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 7076,
+      "title": "Prisoner for Blasphemy",
+      "author": "G. W. Foote",
+      "split": "train",
+      "chars": 379062,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 7238,
+      "title": "My Four Years in Germany",
+      "author": "James W. Gerard",
+      "split": "train",
+      "chars": 540689,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 8007,
+      "title": "The Bible, King James version, Book 7: Judges",
+      "author": "Anonymous",
+      "split": "train",
+      "chars": 120556,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 8602,
+      "title": "The Uninhabited House",
+      "author": "Mrs. J. H. Riddell",
+      "split": "train",
+      "chars": 285994,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 8651,
+      "title": "With Moore at Corunna",
+      "author": "G. A. Henty",
+      "split": "train",
+      "chars": 723122,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 8805,
+      "title": "From One Generation to Another",
+      "author": "Henry Seton Merriman",
+      "split": "train",
+      "chars": 357616,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 9963,
+      "title": "Elsie's Girlhood",
+      "author": "Martha Finley",
+      "split": "train",
+      "chars": 517958,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 10065,
+      "title": "The Constitution of the United States",
+      "author": "James M. Beck",
+      "split": "train",
+      "chars": 204323,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 10387,
+      "title": "A Century Too Soon: The Age of Tyranny",
+      "author": "John R. Musick",
+      "split": "train",
+      "chars": 474167,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 10540,
+      "title": "Mother Carey's Chickens",
+      "author": "Kate Douglas Smith Wiggin",
+      "split": "train",
+      "chars": 404250,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 10586,
+      "title": "Mike and Psmith",
+      "author": "P. G. Wodehouse",
+      "split": "train",
+      "chars": 301653,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 10655,
+      "title": "Autobiography of Sir George Biddell Airy",
+      "author": "George Biddell Airy",
+      "split": "train",
+      "chars": 845111,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 10744,
+      "title": "Men, Women, and Ghosts",
+      "author": "Elizabeth Stuart Phelps",
+      "split": "train",
+      "chars": 448505,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 10831,
+      "title": "The Village in the Mountains; Conversion of Peter Bayssi\u00e8re; and History of a Bible",
+      "author": "Sampson Vryling Stoddard Wilder",
+      "split": "train",
+      "chars": 130446,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 11197,
+      "title": "Bambi",
+      "author": "Marjorie Benton Cooke",
+      "split": "train",
+      "chars": 362768,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 11297,
+      "title": "Travels through the Empire of Morocco",
+      "author": "John Buffa",
+      "split": "train",
+      "chars": 232272,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 11870,
+      "title": "The Country of the Blind, and Other Stories",
+      "author": "H. G. Wells",
+      "split": "train",
+      "chars": 897885,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 12027,
+      "title": "Crime: Its Cause and Treatment",
+      "author": "Clarence Darrow",
+      "split": "train",
+      "chars": 386746,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 12674,
+      "title": "Cock Lane and Common-Sense",
+      "author": "Andrew Lang",
+      "split": "train",
+      "chars": 574997,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 12730,
+      "title": "The High School Boys' Fishing Trip",
+      "author": "H. Irving Hancock",
+      "split": "train",
+      "chars": 270254,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 12814,
+      "title": "Philippine Folk Tales",
+      "author": "",
+      "split": "train",
+      "chars": 260939,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 12900,
+      "title": "Poor Relations",
+      "author": "Honor\u00e9 de Balzac",
+      "split": "train",
+      "chars": 1516958,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 13002,
+      "title": "What I Saw in California",
+      "author": "Edwin Bryant",
+      "split": "train",
+      "chars": 424076,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 13261,
+      "title": "Jason: A Romance",
+      "author": "Justus Miles Forman",
+      "split": "train",
+      "chars": 564233,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 13369,
+      "title": "The Lost Ambassador; Or, The Search For The Missing Delora",
+      "author": "E. Phillips Oppenheim",
+      "split": "train",
+      "chars": 432772,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 14066,
+      "title": "Everyday Foods in War Time",
+      "author": "Mary Swartz Rose",
+      "split": "train",
+      "chars": 129320,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 14504,
+      "title": "Experiments and Considerations Touching Colours (1664)",
+      "author": "Robert Boyle",
+      "split": "train",
+      "chars": 553410,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 14589,
+      "title": "Certain Success",
+      "author": "Norval A. Hawkins",
+      "split": "train",
+      "chars": 519605,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 15035,
+      "title": "Fishing Grounds of the Gulf of Maine",
+      "author": "Walter H. Rich",
+      "split": "train",
+      "chars": 242849,
+      "dropped_duplicate_paragraphs": 5
+    },
+    {
+      "id": 15041,
+      "title": "The Negro Problem",
+      "author": "",
+      "split": "train",
+      "chars": 213944,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 15509,
+      "title": "Laurier: A Study in Canadian Politics",
+      "author": "John Wesley Dafoe",
+      "split": "train",
+      "chars": 156448,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 15920,
+      "title": "Outward Bound Or, Young America Afloat: A Story of Travel and Adventure",
+      "author": "Oliver Optic",
+      "split": "train",
+      "chars": 446882,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 16148,
+      "title": "Fray Luis de Le\u00f3n: A Biographical Fragment",
+      "author": "James Fitzmaurice-Kelly",
+      "split": "train",
+      "chars": 281438,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 16245,
+      "title": "Ten Years' Exile",
+      "author": "Madame de Sta\u00ebl",
+      "split": "train",
+      "chars": 422700,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 16559,
+      "title": "The Life Story of an Old Rebel",
+      "author": "John Denvir",
+      "split": "train",
+      "chars": 427310,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 17054,
+      "title": "The Submarine Boys on Duty",
+      "author": "Victor G. Durham",
+      "split": "train",
+      "chars": 274333,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 17129,
+      "title": "The Missing Link",
+      "author": "Edward Dyson",
+      "split": "train",
+      "chars": 241321,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 17141,
+      "title": "Destiny",
+      "author": "Charles Neville Buck",
+      "split": "train",
+      "chars": 690715,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 17680,
+      "title": "The Title Market",
+      "author": "Emily Post",
+      "split": "train",
+      "chars": 446574,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 17842,
+      "title": "Dead Man's Rock",
+      "author": "Arthur Quiller-Couch",
+      "split": "train",
+      "chars": 491946,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 17966,
+      "title": "Life History of the Kangaroo Rat",
+      "author": "Charles Taylor Vorhies",
+      "split": "train",
+      "chars": 114406,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 18917,
+      "title": "Goldsmith",
+      "author": "William Black",
+      "split": "train",
+      "chars": 255049,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 19085,
+      "title": "The Prelude to Adventure",
+      "author": "Hugh Walpole",
+      "split": "train",
+      "chars": 318117,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 19224,
+      "title": "The Alchemist's Secret",
+      "author": "Isabel Cecilia Williams",
+      "split": "train",
+      "chars": 188559,
+      "dropped_duplicate_paragraphs": 3
+    },
+    {
+      "id": 19298,
+      "title": "The World Order of Bah\u00e1'u'll\u00e1h",
+      "author": "Effendi Shoghi",
+      "split": "train",
+      "chars": 445755,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 19402,
+      "title": "Frank Merriwell's Reward",
+      "author": "Burt L. Standish",
+      "split": "train",
+      "chars": 375998,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 19926,
+      "title": "Standard Selections",
+      "author": "",
+      "split": "train",
+      "chars": 870803,
+      "dropped_duplicate_paragraphs": 12
+    },
+    {
+      "id": 20341,
+      "title": "Grace Harlowe's Overland Riders in the Great North Woods",
+      "author": "Josephine Chase",
+      "split": "train",
+      "chars": 277900,
+      "dropped_duplicate_paragraphs": 5
+    },
+    {
+      "id": 20452,
+      "title": "Letters of Edward FitzGerald, in Two Volumes. Vol. 1",
+      "author": "Edward FitzGerald",
+      "split": "train",
+      "chars": 491182,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 20472,
+      "title": "Grace Harlowe's Plebe Year at High School",
+      "author": "Josephine Chase",
+      "split": "train",
+      "chars": 294641,
+      "dropped_duplicate_paragraphs": 11
+    },
+    {
+      "id": 21088,
+      "title": "The White Squall: A Story of the Sargasso Sea",
+      "author": "John C. Hutcheson",
+      "split": "train",
+      "chars": 412484,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 21091,
+      "title": "The Life of William Ewart Gladstone, Vol. 1 (of 3)",
+      "author": "John Morley",
+      "split": "train",
+      "chars": 1521510,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 21249,
+      "title": "Clayhanger",
+      "author": "Arnold Bennett",
+      "split": "train",
+      "chars": 1087405,
+      "dropped_duplicate_paragraphs": 247
+    },
+    {
+      "id": 21251,
+      "title": "The Jefferson-Lemen Compact",
+      "author": "Willard C. MacNaul",
+      "split": "train",
+      "chars": 125592,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 21254,
+      "title": "In Africa: Hunting Adventures in the Big Game Country",
+      "author": "John T. McCutcheon",
+      "split": "train",
+      "chars": 483468,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 21388,
+      "title": "Exiled for the Faith: A Tale of the Huguenot Persecution",
+      "author": "William Henry Giles Kingston",
+      "split": "train",
+      "chars": 259700,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 21485,
+      "title": "The Young Rajah",
+      "author": "William Henry Giles Kingston",
+      "split": "train",
+      "chars": 385920,
+      "dropped_duplicate_paragraphs": 4
+    },
+    {
+      "id": 21574,
+      "title": "The Poacher; Or, Joseph Rushbrook",
+      "author": "Frederick Marryat",
+      "split": "train",
+      "chars": 676250,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 21754,
+      "title": "The Ocean and Its Wonders",
+      "author": "R. M. Ballantyne",
+      "split": "train",
+      "chars": 252817,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 22017,
+      "title": "A Key to the Knowledge of Church History (Ancient)",
+      "author": "John Henry Blunt",
+      "split": "train",
+      "chars": 265372,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 22519,
+      "title": "Christmas Every Day and Other Stories",
+      "author": "William Dean Howells",
+      "split": "train",
+      "chars": 101344,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 22532,
+      "title": "Mary Louise and Josie O'Gorman",
+      "author": "Emma Speed Sampson",
+      "split": "train",
+      "chars": 217136,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 22682,
+      "title": "Secret armies",
+      "author": "John L. Spivak",
+      "split": "train",
+      "chars": 260605,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 23277,
+      "title": "Feats on the Fiord",
+      "author": "Harriet Martineau",
+      "split": "train",
+      "chars": 341856,
+      "dropped_duplicate_paragraphs": 7
+    },
+    {
+      "id": 23631,
+      "title": "The moonshiners at Hoho-hebee Falls",
+      "author": "Charles Egbert Craddock",
+      "split": "train",
+      "chars": 162638,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 23661,
+      "title": "The Book of Dragons",
+      "author": "E. Nesbit",
+      "split": "train",
+      "chars": 227783,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 23763,
+      "title": "Fred Fenton on the Track; Or, The Athletes of Riverport School",
+      "author": "Allen Chapman",
+      "split": "train",
+      "chars": 246112,
+      "dropped_duplicate_paragraphs": 11
+    },
+    {
+      "id": 24033,
+      "title": "Dave Porter in the Gold Fields; Or, The Search for the Landslide Mine",
+      "author": "Edward Stratemeyer",
+      "split": "train",
+      "chars": 339401,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 24299,
+      "title": "The Cryptogram: A Story of Northwest Canada",
+      "author": "William Murray Graydon",
+      "split": "train",
+      "chars": 436719,
+      "dropped_duplicate_paragraphs": 4
+    },
+    {
+      "id": 24588,
+      "title": "The Natural History of Chocolate",
+      "author": "D. Qu\u00e9lus",
+      "split": "train",
+      "chars": 114293,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 25135,
+      "title": "With the Guards' Brigade from Bloemfontein to Koomati Poort and Back",
+      "author": "Edward P. Lowry",
+      "split": "train",
+      "chars": 447535,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 25428,
+      "title": "Anecdotes of Animals",
+      "author": "Unknown",
+      "split": "train",
+      "chars": 114994,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 25545,
+      "title": "Children's Literature",
+      "author": "Charles Madison Curry",
+      "split": "train",
+      "chars": 2207087,
+      "dropped_duplicate_paragraphs": 21
+    },
+    {
+      "id": 25926,
+      "title": "The 1926 Tatler",
+      "author": "",
+      "split": "train",
+      "chars": 115107,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 25947,
+      "title": "The Devil: A Tragedy of the Heart and Conscience",
+      "author": "Joseph O'Brien",
+      "split": "train",
+      "chars": 167967,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 25973,
+      "title": "Birds of the Rockies",
+      "author": "Leander S. Keyser",
+      "split": "train",
+      "chars": 402462,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 26216,
+      "title": "The Son of Monte-Cristo",
+      "author": "Jules Lermina",
+      "split": "train",
+      "chars": 592088,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 26242,
+      "title": "The Bill-Toppers",
+      "author": "J. Andr\u00e9 Castaigne",
+      "split": "train",
+      "chars": 604908,
+      "dropped_duplicate_paragraphs": 18
+    },
+    {
+      "id": 26673,
+      "title": "At the Sign of the Jack O'Lantern",
+      "author": "Myrtle Reed",
+      "split": "train",
+      "chars": 371268,
+      "dropped_duplicate_paragraphs": 3
+    },
+    {
+      "id": 27445,
+      "title": "Love of Brothers",
+      "author": "Katharine Tynan",
+      "split": "train",
+      "chars": 418943,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 27503,
+      "title": "On the Equator",
+      "author": "Harry De Windt",
+      "split": "train",
+      "chars": 174233,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 28170,
+      "title": "Slave Narratives: A Folk History of Slavery in the United States from Interviews with Former Slaves, Volume XIV, South Carolina Narratives, Part 4",
+      "author": "United States. Work Projects Administration",
+      "split": "train",
+      "chars": 386496,
+      "dropped_duplicate_paragraphs": 10
+    },
+    {
+      "id": 28420,
+      "title": "Lives of the Most Eminent Painters Sculptors and Architects, Vol. 04 (of 10)",
+      "author": "Giorgio Vasari",
+      "split": "train",
+      "chars": 548891,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 28997,
+      "title": "Great Men and Famous Women, Vol. 7",
+      "author": "",
+      "split": "train",
+      "chars": 630441,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 29323,
+      "title": "An Old Sailor's Yarns",
+      "author": "N. Ames",
+      "split": "train",
+      "chars": 493988,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 29569,
+      "title": "The Mysterious Murder of Pearl Bryan, or: the Headless Horror.",
+      "author": "Unknown",
+      "split": "train",
+      "chars": 192581,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 29622,
+      "title": "The Book of Common Prayer",
+      "author": "Episcopal Church in Scotland",
+      "split": "train",
+      "chars": 1145837,
+      "dropped_duplicate_paragraphs": 250
+    },
+    {
+      "id": 30186,
+      "title": "The Great Events by Famous Historians, Volume 13",
+      "author": "",
+      "split": "train",
+      "chars": 910943,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 30224,
+      "title": "A Prairie Infanta",
+      "author": "Eva Wilder Brodhead",
+      "split": "train",
+      "chars": 110860,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 30875,
+      "title": "Maria Antoinette",
+      "author": "John S. C. Abbott",
+      "split": "train",
+      "chars": 351193,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 32006,
+      "title": "Modern Substitutes for Christianity",
+      "author": "Pearson M'Adam Muir",
+      "split": "train",
+      "chars": 239542,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 32062,
+      "title": "The Daltons; Or, Three Roads In Life. Volume II (of II)",
+      "author": "Charles Lever",
+      "split": "train",
+      "chars": 965828,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 32125,
+      "title": "Rulers of India: Lord Clive",
+      "author": "G. B. Malleson",
+      "split": "train",
+      "chars": 347038,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 32274,
+      "title": "The History and Records of the Elephant Club",
+      "author": "Edward F. Underhill",
+      "split": "train",
+      "chars": 382205,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 32334,
+      "title": "Jacko and Jumpo Kinkytail (The Funny Monkey Boys)",
+      "author": "Howard Roger Garis",
+      "split": "train",
+      "chars": 214534,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 32968,
+      "title": "The Expositor's Bible: The Epistle to the Hebrews",
+      "author": "Thomas Charles Edwards",
+      "split": "train",
+      "chars": 451194,
+      "dropped_duplicate_paragraphs": 10
+    },
+    {
+      "id": 33049,
+      "title": "The Origin of the World According to Revelation and Science",
+      "author": "Sir John William Dawson",
+      "split": "train",
+      "chars": 802750,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 33257,
+      "title": "Under the Mendips: A Tale",
+      "author": "Emma Marshall",
+      "split": "train",
+      "chars": 465582,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 33273,
+      "title": "Lives of Celebrated Women",
+      "author": "Samuel G. Goodrich",
+      "split": "train",
+      "chars": 546978,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 33303,
+      "title": "Russian Life To-day",
+      "author": "Bp. Herbert Bury",
+      "split": "train",
+      "chars": 343320,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 33370,
+      "title": "Soap-Bubbles and the Forces Which Mould Them",
+      "author": "C. V. Boys",
+      "split": "train",
+      "chars": 157940,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 33379,
+      "title": "Dietetics for Nurses",
+      "author": "Fairfax T. Proudfit",
+      "split": "train",
+      "chars": 1020198,
+      "dropped_duplicate_paragraphs": 4
+    },
+    {
+      "id": 33501,
+      "title": "The Book of Gud",
+      "author": "Milo Hastings",
+      "split": "train",
+      "chars": 291902,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 33754,
+      "title": "Terry's Trials and Triumphs",
+      "author": "J. Macdonald Oxley",
+      "split": "train",
+      "chars": 210141,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 33757,
+      "title": "The Elements of Botany, For Beginners and For Schools",
+      "author": "Asa Gray",
+      "split": "train",
+      "chars": 539685,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 33990,
+      "title": "The Red Cross Girls with Pershing to Victory",
+      "author": "Margaret Vandercook",
+      "split": "train",
+      "chars": 250701,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 34230,
+      "title": "Sweethearts at Home",
+      "author": "S. R. Crockett",
+      "split": "train",
+      "chars": 324001,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 34281,
+      "title": "The Sheriff of Badger: A Tale of the Southwest Borderland",
+      "author": "George Pattullo",
+      "split": "train",
+      "chars": 381087,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 34452,
+      "title": "The Iron Arrow Head or The Buckler Maiden: A Tale of the Northman Invasion",
+      "author": "Eug\u00e8ne Sue",
+      "split": "train",
+      "chars": 206531,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 34772,
+      "title": "Stained Glass Tours in France",
+      "author": "Charles Hitchcock Sherrill",
+      "split": "train",
+      "chars": 360279,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 34975,
+      "title": "Whispering Walls",
+      "author": "Mildred A. Wirt",
+      "split": "train",
+      "chars": 242903,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 35428,
+      "title": "A Charming Fellow, Volume I",
+      "author": "Frances Eleanor Trollope",
+      "split": "train",
+      "chars": 335654,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 35591,
+      "title": "The Daughter Pays",
+      "author": "Mrs. Baillie Reynolds",
+      "split": "train",
+      "chars": 605391,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 35729,
+      "title": "Peggy Parsons, a Hampton Freshman",
+      "author": "Annabel Sharp",
+      "split": "train",
+      "chars": 235605,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 36162,
+      "title": "Living for the Best",
+      "author": "James G. K. McClure",
+      "split": "train",
+      "chars": 165927,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 36481,
+      "title": "Auriol; or, The Elixir of Life",
+      "author": "William Harrison Ainsworth",
+      "split": "train",
+      "chars": 320741,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 36714,
+      "title": "Dickens",
+      "author": "Sir Adolphus William Ward",
+      "split": "train",
+      "chars": 417937,
+      "dropped_duplicate_paragraphs": 5
+    },
+    {
+      "id": 36923,
+      "title": "Pawnee Hero Stories and Folk-Tales",
+      "author": "George Bird Grinnell",
+      "split": "train",
+      "chars": 461642,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 37142,
+      "title": "How to Care for the Insane: A Manual for Nurses",
+      "author": "William D. Granger",
+      "split": "train",
+      "chars": 162472,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 37180,
+      "title": "Penelope Brandling: A Tale of the Welsh coast in the Eighteenth Century",
+      "author": "Vernon Lee",
+      "split": "train",
+      "chars": 119854,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 37187,
+      "title": "Ulster Folklore",
+      "author": "F.R.A.I. Elizabeth Andrews",
+      "split": "train",
+      "chars": 184291,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 37304,
+      "title": "Those Dale Girls",
+      "author": "Frances Carruth Prindle",
+      "split": "train",
+      "chars": 368912,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 37507,
+      "title": "The Spaniards in Florida",
+      "author": "George R. Fairbanks",
+      "split": "train",
+      "chars": 260472,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 37563,
+      "title": "A Man of Honor",
+      "author": "George Cary Eggleston",
+      "split": "train",
+      "chars": 276724,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 37581,
+      "title": "The Cricket on the Hearth: A Fairy Tale of Home",
+      "author": "Charles Dickens",
+      "split": "train",
+      "chars": 179903,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 37906,
+      "title": "The Whirligig of Time",
+      "author": "Wayland Wells Williams",
+      "split": "train",
+      "chars": 806167,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 38355,
+      "title": "Light and Peace",
+      "author": "Carlo Giuseppe Quadrupani",
+      "split": "train",
+      "chars": 210599,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 38536,
+      "title": "A Review of Algebra",
+      "author": "Romeyn Henry Rivenburg",
+      "split": "train",
+      "chars": 101014,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 38869,
+      "title": "From the Lakes of Killarney to the Golden Horn",
+      "author": "Henry M. Field",
+      "split": "train",
+      "chars": 656647,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 39342,
+      "title": "The Sea: Its Stirring Story of Adventure, Peril, & Heroism. Volume 2",
+      "author": "Frederick Whymper",
+      "split": "train",
+      "chars": 975384,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 39388,
+      "title": "The Columbia River: Its History, Its Myths, Its Scenery, Its Commerce",
+      "author": "William Denison Lyman",
+      "split": "train",
+      "chars": 706796,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 39516,
+      "title": "A Captain of Industry: Being the Story of a Civilized Man",
+      "author": "Upton Sinclair",
+      "split": "train",
+      "chars": 112332,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 39543,
+      "title": "A Holiday in Bed, and Other Sketches",
+      "author": "J. M. Barrie",
+      "split": "train",
+      "chars": 140044,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 39630,
+      "title": "Recollections of Abraham Lincoln, 1847-1865",
+      "author": "Ward Hill Lamon",
+      "split": "train",
+      "chars": 559430,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 39847,
+      "title": "In the Tideway",
+      "author": "Flora Annie Webster Steel",
+      "split": "train",
+      "chars": 142766,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 40003,
+      "title": "Australian Heroes and Adventurers",
+      "author": "William T. Pyke",
+      "split": "train",
+      "chars": 191189,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 40190,
+      "title": "Science and Practice in Farm Cultivation",
+      "author": "James Buckman",
+      "split": "train",
+      "chars": 585641,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 40794,
+      "title": "Essays in Experimental Logic",
+      "author": "John Dewey",
+      "split": "train",
+      "chars": 664036,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 41036,
+      "title": "Brave Deeds of Union Soldiers",
+      "author": "Samuel Scoville",
+      "split": "train",
+      "chars": 393561,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 41351,
+      "title": "Practical Exercises in Elementary Meteorology",
+      "author": "Robert DeCourcy Ward",
+      "split": "train",
+      "chars": 445881,
+      "dropped_duplicate_paragraphs": 11
+    },
+    {
+      "id": 41590,
+      "title": "Negro Tales",
+      "author": "Joseph S. Cotter",
+      "split": "train",
+      "chars": 154329,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 41597,
+      "title": "The History of the City of Fredericksburg, Virginia",
+      "author": "S. J. Quinn",
+      "split": "train",
+      "chars": 751315,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 41912,
+      "title": "A Survivor's Recollections of the Whitman Massacre",
+      "author": "Matilda Sager",
+      "split": "train",
+      "chars": 113914,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 42345,
+      "title": "Children's Stories in American History",
+      "author": "Henrietta Christian Wright",
+      "split": "train",
+      "chars": 367709,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 42369,
+      "title": "Motors",
+      "author": "James Slough Zerbe",
+      "split": "train",
+      "chars": 277820,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 42537,
+      "title": "The Avifauna of Micronesia, Its Origin, Evolution, and Distribution",
+      "author": "Rollin H. Baker",
+      "split": "train",
+      "chars": 1116084,
+      "dropped_duplicate_paragraphs": 14
+    },
+    {
+      "id": 43074,
+      "title": "Mary Queen of Scots in History",
+      "author": "",
+      "split": "train",
+      "chars": 255571,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 43112,
+      "title": "Sweet Content",
+      "author": "Mrs. Molesworth",
+      "split": "train",
+      "chars": 195887,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 43439,
+      "title": "Short Studies in Ethics: An Elementary Text-Book for Schools",
+      "author": "John Ormsby Miller",
+      "split": "train",
+      "chars": 138127,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 44123,
+      "title": "Jessie's Parrot",
+      "author": "Joanna H. Mathews",
+      "split": "train",
+      "chars": 215746,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 44227,
+      "title": "The Flying Reporter",
+      "author": "Lewis E. Theiss",
+      "split": "train",
+      "chars": 311036,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 44998,
+      "title": "The Gentleman from San Francisco, and Other Stories",
+      "author": "Ivan Alekseevich Bunin",
+      "split": "train",
+      "chars": 116361,
+      "dropped_duplicate_paragraphs": 8
+    },
+    {
+      "id": 46685,
+      "title": "A Ride on Horseback to Florence Through France and Switzerland. Vol. 1 of 2",
+      "author": "Augusta Macgregor Holmes",
+      "split": "train",
+      "chars": 466037,
+      "dropped_duplicate_paragraphs": 3
+    },
+    {
+      "id": 46836,
+      "title": "Mechanical Devices in the Home",
+      "author": "Edith Allen",
+      "split": "train",
+      "chars": 301409,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 46924,
+      "title": "The Bronze Age and the Celtic World",
+      "author": "Harold Peake",
+      "split": "train",
+      "chars": 447559,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 47022,
+      "title": "Essays on the Greek Romances",
+      "author": "Elizabeth Hazelton Haight",
+      "split": "train",
+      "chars": 392773,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 47128,
+      "title": "Billy Topsail, M.D.: A Tale of Adventure With Doctor Luke of the Labrador",
+      "author": "Norman Duncan",
+      "split": "train",
+      "chars": 310779,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 47526,
+      "title": "Precious Memories",
+      "author": "",
+      "split": "train",
+      "chars": 160989,
+      "dropped_duplicate_paragraphs": 11
+    },
+    {
+      "id": 48217,
+      "title": "The Treasure of the Humble",
+      "author": "Maurice Maeterlinck",
+      "split": "train",
+      "chars": 186265,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 49657,
+      "title": "Bosambo of the River",
+      "author": "",
+      "split": "train",
+      "chars": 332035,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 49964,
+      "title": "Prisons Over Seas",
+      "author": "Arthur Griffiths",
+      "split": "train",
+      "chars": 485611,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 50737,
+      "title": "Confederate Military History - Volume 5 (of 12)",
+      "author": "Ellison Capers",
+      "split": "train",
+      "chars": 823366,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 51054,
+      "title": "The Wolf-Leader",
+      "author": "Alexandre Dumas",
+      "split": "train",
+      "chars": 492793,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 51693,
+      "title": "The Brownie Scouts in the Cherry Festival",
+      "author": "Mildred A. Wirt",
+      "split": "train",
+      "chars": 216081,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 52026,
+      "title": "Matthew Calbraith Perry: A Typical American Naval Officer",
+      "author": "William Elliot Griffis",
+      "split": "train",
+      "chars": 661967,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 52639,
+      "title": "Moses and Aaron: Civil and Ecclesiastical Rites, Used by the Ancient Hebrews",
+      "author": "Thomas Goodwin",
+      "split": "train",
+      "chars": 570364,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 53138,
+      "title": "The Jesuit Relations and Allied Documents, Vol. 7: Quebec, Hurons, Cape Breton, 1634-1635",
+      "author": "",
+      "split": "train",
+      "chars": 513077,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 53141,
+      "title": "Popular Official Guide to the New York Zoological Park (September 1915)",
+      "author": "William T. Hornaday",
+      "split": "train",
+      "chars": 358622,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 53320,
+      "title": "The Motor Boys in the Army; or, Ned, Bob and Jerry as Volunteers",
+      "author": "Clarence Young",
+      "split": "train",
+      "chars": 293548,
+      "dropped_duplicate_paragraphs": 7
+    },
+    {
+      "id": 53349,
+      "title": "Our Cavalry",
+      "author": "Michael Frederic Rimington",
+      "split": "train",
+      "chars": 345295,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 53361,
+      "title": "Patsy Carroll Under Southern Skies",
+      "author": "Josephine Chase",
+      "split": "train",
+      "chars": 349061,
+      "dropped_duplicate_paragraphs": 5
+    },
+    {
+      "id": 53894,
+      "title": "The Peep of Day",
+      "author": "Favell Lee Mortimer",
+      "split": "train",
+      "chars": 179723,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 54441,
+      "title": "The British Navy in Battle",
+      "author": "Arthur Joseph Hungerford Pollen",
+      "split": "train",
+      "chars": 600310,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 54470,
+      "title": "Tar Heel Tales",
+      "author": "H. E. C. Bryant",
+      "split": "train",
+      "chars": 205098,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 54606,
+      "title": "The Flower Garden",
+      "author": "Ida D. Bennett",
+      "split": "train",
+      "chars": 419708,
+      "dropped_duplicate_paragraphs": 9
+    },
+    {
+      "id": 54607,
+      "title": "Historical Record of the Fifth, or Princess Charlotte of Wales's Regiment of Dragoon Guards",
+      "author": "Richard Cannon",
+      "split": "train",
+      "chars": 188885,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 54900,
+      "title": "The Return of the O'Mahony: A Novel",
+      "author": "Harold Frederic",
+      "split": "train",
+      "chars": 453262,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 55025,
+      "title": "Celtic Folklore: Welsh and Manx (Volume 1 of 2)",
+      "author": "Sir John Rhys",
+      "split": "train",
+      "chars": 835198,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 55199,
+      "title": "The True Travels, Adventures, and Observations of Captain John Smith into Europe, Asia, Africa, and America",
+      "author": "John Smith",
+      "split": "train",
+      "chars": 195325,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 55728,
+      "title": "Hellenism in Asia Minor",
+      "author": "Karl Dieterich",
+      "split": "train",
+      "chars": 139243,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 55772,
+      "title": "The Peddler Spy; or, Dutchmen and Yankees. A Tale of the Capture of Good Hope",
+      "author": "W. J. Hamilton",
+      "split": "train",
+      "chars": 177501,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 55818,
+      "title": "The Complete Testimony of the Fathers of the First Three Centuries Concerning the Sabbath and First Day",
+      "author": "John Nevins Andrews",
+      "split": "train",
+      "chars": 197425,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 55978,
+      "title": "A History of Troop A Cavalry, Connecticut National Guard and Its Service in the Great War as Co. D, 102d Machine Gun Battalion",
+      "author": "",
+      "split": "train",
+      "chars": 184327,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 56112,
+      "title": "The Man Behind the Bars",
+      "author": "Winifred Louise Taylor",
+      "split": "train",
+      "chars": 348696,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 56440,
+      "title": "Physiological Researches on Life and Death",
+      "author": "Xavier Bichat",
+      "split": "train",
+      "chars": 654048,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 56619,
+      "title": "General History of Connecticut, from Its First Settlement Under George Fenwick to its Latest Period of Amity with Great Britain",
+      "author": "Samuel Peters",
+      "split": "train",
+      "chars": 548178,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 56643,
+      "title": "The Memoirs of Maria Stella (Lady Newborough)",
+      "author": "Baroness Maria Stella Petronilla Ungern-Sternberg",
+      "split": "train",
+      "chars": 315917,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 56709,
+      "title": "Texas in the Civil War: A R\u00e9sum\u00e9 History",
+      "author": "Allan Coleman Ashcraft",
+      "split": "train",
+      "chars": 124568,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 57432,
+      "title": "On Mule Back Thru Central America with the Gospel",
+      "author": "Mattie Crawford",
+      "split": "train",
+      "chars": 176340,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 57667,
+      "title": "The changing world, and lectures to theosophical students.",
+      "author": "Annie Besant",
+      "split": "train",
+      "chars": 580004,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 57773,
+      "title": "Theism and Humanism",
+      "author": "Arthur James Balfour",
+      "split": "train",
+      "chars": 321568,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 58041,
+      "title": "The Good Englishwoman",
+      "author": "Orlo Williams",
+      "split": "train",
+      "chars": 305231,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 58755,
+      "title": "A Lost Leader: A Tale of Restoration Days",
+      "author": "Dorothea Townshend",
+      "split": "train",
+      "chars": 290832,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 58962,
+      "title": "Making Home Profitable",
+      "author": "Kate V. Saint Maur",
+      "split": "train",
+      "chars": 299066,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 59340,
+      "title": "The Motor Boys on Thunder Mountain; Or, The Treasure Chest of Blue Rock",
+      "author": "Clarence Young",
+      "split": "train",
+      "chars": 290236,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 60254,
+      "title": "Cassell's book of birds; vol. 3",
+      "author": "Alfred Edmund Brehm",
+      "split": "train",
+      "chars": 1048439,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 60265,
+      "title": "The Red Cross Girls on the French Firing Line",
+      "author": "Margaret Vandercook",
+      "split": "train",
+      "chars": 249382,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 60378,
+      "title": "Life and Writings of Thomas R. Malthus",
+      "author": "Charles R. Drysdale",
+      "split": "train",
+      "chars": 297078,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 60456,
+      "title": "From Office Boy to Reporter; Or, The First Step in Journalism",
+      "author": "Howard Roger Garis",
+      "split": "train",
+      "chars": 363073,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 61514,
+      "title": "Captain Sparkle, Pirate; Or, A Hard Man to Catch",
+      "author": "Nicholas Carter",
+      "split": "train",
+      "chars": 311091,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 61522,
+      "title": "The \u00a31,000,000 bank-note, and other new stories",
+      "author": "Mark Twain",
+      "split": "train",
+      "chars": 362291,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 61605,
+      "title": "The Money Market",
+      "author": "F. Straker",
+      "split": "train",
+      "chars": 227791,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 62184,
+      "title": "For God and Gold",
+      "author": "Julian Stafford Corbett",
+      "split": "train",
+      "chars": 611726,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 62562,
+      "title": "Menasseh ben Israel's Mission to Oliver Cromwell",
+      "author": "Manasseh ben Israel",
+      "split": "train",
+      "chars": 611299,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 62989,
+      "title": "Jimmy Kirkland of the Cascade College Team",
+      "author": "Hugh S. Fullerton",
+      "split": "train",
+      "chars": 235316,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 63089,
+      "title": "The Body at Work: A Treatise on the Principles of Physiology",
+      "author": "Alex Hill",
+      "split": "train",
+      "chars": 1037355,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 63209,
+      "title": "Decatur and Somers",
+      "author": "Molly Elliot Seawell",
+      "split": "train",
+      "chars": 241424,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 63621,
+      "title": "My \"Little Bit\"",
+      "author": "Marie Corelli",
+      "split": "train",
+      "chars": 457486,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 63623,
+      "title": "The Pearl, its story, its charm, and its value",
+      "author": "Wallis Richard Cattelle",
+      "split": "train",
+      "chars": 355331,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 64777,
+      "title": "He that will not when he may; vol. I",
+      "author": "Mrs. Oliphant",
+      "split": "train",
+      "chars": 309712,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 65058,
+      "title": "Old Greek Education",
+      "author": "J. P. Mahaffy",
+      "split": "train",
+      "chars": 261476,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 65170,
+      "title": "Antonia",
+      "author": "George Sand",
+      "split": "train",
+      "chars": 481663,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 66540,
+      "title": "Cosmic Saboteur",
+      "author": "Frank M. Robinson",
+      "split": "train",
+      "chars": 135491,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 66671,
+      "title": "Mr. Clutterbuck's Election",
+      "author": "Hilaire Belloc",
+      "split": "train",
+      "chars": 410281,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 66688,
+      "title": "Hans Andersen's Fairy Tales",
+      "author": "H. C. Andersen",
+      "split": "train",
+      "chars": 397224,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 67435,
+      "title": "The honey-bee: its nature, homes and products",
+      "author": "William Hetherington Harris",
+      "split": "train",
+      "chars": 382803,
+      "dropped_duplicate_paragraphs": 6
+    },
+    {
+      "id": 68225,
+      "title": "Australian fairy tales",
+      "author": "Atha Westbury",
+      "split": "train",
+      "chars": 375224,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 68252,
+      "title": "The life story of a squirrel",
+      "author": "T. C. Bridges",
+      "split": "train",
+      "chars": 276041,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 68492,
+      "title": "The story of iron",
+      "author": "Elizabeth Ida Samuel",
+      "split": "train",
+      "chars": 175360,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 68549,
+      "title": "The poisoned paradise: A romance of Monte Carlo",
+      "author": "Robert W. Service",
+      "split": "train",
+      "chars": 583439,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 68666,
+      "title": "Traditions of the Arikara",
+      "author": "George A. Dorsey",
+      "split": "train",
+      "chars": 514688,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 69093,
+      "title": "History of scientific ideas",
+      "author": "William Whewell",
+      "split": "train",
+      "chars": 1397196,
+      "dropped_duplicate_paragraphs": 3
+    },
+    {
+      "id": 69217,
+      "title": "The Hampstead mystery: a novel. Volume 2 (of 3)",
+      "author": "Florence Marryat",
+      "split": "train",
+      "chars": 222853,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 69263,
+      "title": "The Babbington case; Or, Nick Carter's strange quest",
+      "author": "Nicholas Carter",
+      "split": "train",
+      "chars": 436856,
+      "dropped_duplicate_paragraphs": 5
+    },
+    {
+      "id": 69581,
+      "title": "Sacred and legendary art, volume 1 (of 2)",
+      "author": "Mrs. Jameson",
+      "split": "train",
+      "chars": 846535,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 70610,
+      "title": "The grandfathers' war",
+      "author": "Murray Leinster",
+      "split": "train",
+      "chars": 126124,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 70813,
+      "title": "Hand-book on cheese making",
+      "author": "George E. Newell",
+      "split": "train",
+      "chars": 110719,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 71004,
+      "title": "Between the twilights",
+      "author": "Cornelia Sorabji",
+      "split": "train",
+      "chars": 204309,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 71238,
+      "title": "Ritual and belief",
+      "author": "Edwin Sidney Hartland",
+      "split": "train",
+      "chars": 660099,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 71357,
+      "title": "Phemie Keller",
+      "author": "Mrs. J. H. Riddell",
+      "split": "train",
+      "chars": 309576,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 71571,
+      "title": "At the back of the world",
+      "author": "George Pugh",
+      "split": "train",
+      "chars": 422642,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 71664,
+      "title": "Noel's Christmas tree",
+      "author": "Amy Le Feuvre",
+      "split": "train",
+      "chars": 256123,
+      "dropped_duplicate_paragraphs": 1
+    },
+    {
+      "id": 71718,
+      "title": "Lake country sketches",
+      "author": "H. D. Rawnsley",
+      "split": "train",
+      "chars": 277012,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 71884,
+      "title": "The great masters of Russian literature in the nineteenth century",
+      "author": "Ernest Dupuy",
+      "split": "train",
+      "chars": 484055,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 72134,
+      "title": "The Bible of nature",
+      "author": "Felix L. Oswald",
+      "split": "train",
+      "chars": 356806,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 72228,
+      "title": "The making of a woman",
+      "author": "Amy Le Feuvre",
+      "split": "train",
+      "chars": 382481,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 72341,
+      "title": "Rare days in Japan",
+      "author": "George Trumbull Ladd",
+      "split": "train",
+      "chars": 434316,
+      "dropped_duplicate_paragraphs": 0
+    },
+    {
+      "id": 72540,
+      "title": "The doctor, &c., vol. 6 (of 7)",
+      "author": "Robert Southey",
+      "split": "train",
+      "chars": 413409,
+      "dropped_duplicate_paragraphs": 53
+    },
+    {
+      "id": 72847,
+      "title": "Steam-ships",
+      "author": "R. A. Fletcher",
+      "split": "train",
+      "chars": 823478,
+      "dropped_duplicate_paragraphs": 5
+    },
+    {
+      "id": 74331,
+      "title": "The remains of the late Mrs. Richard Trench",
+      "author": "Melesina Chenevix St. George Trench",
+      "split": "train",
+      "chars": 819535,
+      "dropped_duplicate_paragraphs": 2
+    },
+    {
+      "id": 74575,
+      "title": "Cyclopedia of illustrations for public speakers",
+      "author": "",
+      "split": "train",
+      "chars": 3698208,
+      "dropped_duplicate_paragraphs": 6
+    },
+    {
+      "id": 74673,
+      "title": "My autobiography",
+      "author": "Benito Mussolini",
+      "split": "train",
+      "chars": 512978,
+      "dropped_duplicate_paragraphs": 0
+    }
+  ],
+  "base_documents": 57,
+  "extra_documents": 278,
+  "skipped": [
+    {
+      "id": 1080,
+      "reason": "too short"
+    },
+    {
+      "id": 5740,
+      "reason": "download failed: HTTPError"
+    },
+    {
+      "id": 19033,
+      "reason": "duplicate title \"Alice's Adventures in Wonderland\""
+    },
+    {
+      "id": 63827,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 24913,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 63463,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 1064,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 50076,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 20723,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 58040,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 21732,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 3542,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 45104,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 69451,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 28053,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 16275,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 1171,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 29505,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 52971,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 36533,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 52482,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 65479,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 72610,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 60955,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 15552,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 17168,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 63583,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 548,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 45479,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 73082,
+      "reason": "download failed: HTTPError"
+    },
+    {
+      "id": 21914,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 22958,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 72181,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 64374,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 23174,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 52244,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 65977,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 58397,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 17645,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 73158,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 57438,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 7562,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 6393,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 31977,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 36628,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 3382,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 23552,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 9505,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 16088,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 67918,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 59982,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 73296,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 34671,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 23594,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 33934,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 7590,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 29159,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 63632,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 12417,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 23697,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 19687,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 65645,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 32838,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 9193,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 30491,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 59494,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 50355,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 73230,
+      "reason": "too short (<100k chars)"
+    }
+  ],
+  "extra_skipped": [
+    {
+      "id": 63827,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 24913,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 63463,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 1064,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 50076,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 20723,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 58040,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 21732,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 3542,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 45104,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 69451,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 28053,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 16275,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 1171,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 29505,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 52971,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 36533,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 52482,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 65479,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 72610,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 60955,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 15552,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 17168,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 63583,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 548,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 45479,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 73082,
+      "reason": "download failed: HTTPError"
+    },
+    {
+      "id": 21914,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 22958,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 72181,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 64374,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 23174,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 52244,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 65977,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 58397,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 17645,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 73158,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 57438,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 7562,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 6393,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 31977,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 36628,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 3382,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 23552,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 9505,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 16088,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 67918,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 59982,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 73296,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 34671,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 23594,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 33934,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 7590,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 29159,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 63632,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 12417,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 23697,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 19687,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 65645,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 32838,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 9193,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 30491,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 59494,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 50355,
+      "reason": "too short (<100k chars)"
+    },
+    {
+      "id": 73230,
+      "reason": "too short (<100k chars)"
+    }
+  ],
+  "splits": {
+    "train": {
+      "bytes": 160286597,
+      "sha256": "e859fd9fd469ba6d0de098c764c345ac5e668540843015dbc128e7b3cd24bb74"
+    },
+    "val": {
+      "bytes": 2281541,
+      "sha256": "c258c430e982f91e2071b8a452e53b4138e48ec5ba4b998a4dba6949104540a1"
+    },
+    "test": {
+      "bytes": 5175949,
+      "sha256": "eb8d3c1588e05822fa2ba2ef123c2b42eea0d14964b382f8825d14f473b93af4"
+    }
+  },
+  "created": "2026-10-17 20:09:17",
+  "code_revision": "1775a4d",
+  "val_test_identical_to_base": {
+    "val": true,
+    "test": true
+  }
+}
