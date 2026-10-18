@@ -23,6 +23,9 @@ Goal: most capable model on RTX 4060 Ti 8GB (see user's 10-step plan: GPU env ->
 ## Diffusion status (latest, supersedes 'Next' below)
 Done: loss diagnosis, sampler fix (x0_rescale), U-Net vs birnn comparison - see EXPERIMENTS.md 'Diffusion track'. Open: models learn format not answers; try longer training / positional signal / conditioning only if the user wants to continue; DDIM speed item and shared loops deferred (not justified by evidence).
 
+## Final state (2026-10-18)
+Diffusion track closed out: logit head + warp + 4 h run reached word-hit 0.587 (0.645 at sampler s=0.8; real text 0.933), not coherent English, no overfitting. See FINAL_REPORT.md and EXPERIMENTS.md. Still a research prototype; project stays diffusion-based.
+
 ## Done
 - Step 1 GPU env (ENVIRONMENT.md, gpu_smoke.py - gpu_smoke.py still uses old diffusion globals, needs presets update).
 - Step 2/3 reproducible runs, corrected training loop, tests (tests/, 58 passing): config.py presets, train.py (train/resume/generate/eval CLI), checkpoints validated.
