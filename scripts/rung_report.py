@@ -11,7 +11,7 @@ os.chdir(ROOT)
 CE_TOL, WH_TOL, BPB_TOL = 0.003, 0.05, 0.1
 QE_SHIFT = 0.0208  # quick_eval draws t/noise per batch, so its CE depends on the batch size: measured on the final checkpoints of rung_bs128 and ladder_w96_s0,
 # the bs128 protocol (8 x 128) reads 0.0211 / 0.0211 lower than the bs32 protocol (32 x 32); mean 0.0208 shift puts both on the bs32 scale
-ORDER = ["bs128", "bs128_25k", "R4", "R6", "tied_R8", "tied_R4", "tied_R6", "span30", "span60"]
+ORDER = ["bs128", "bs128_25k", "R4", "R6", "tied_R8", "tied_R4", "tied_R6", "span30", "span60", "selfcond"]
 
 
 def load(p):

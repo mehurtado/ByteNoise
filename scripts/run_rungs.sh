@@ -23,6 +23,7 @@ EXTRA[tied_R4]="model.tied_head=true model.embed_norm=4"
 EXTRA[tied_R6]="model.tied_head=true model.embed_norm=6"
 EXTRA[span30]="diffusion.span_noise_prob=0.3"
 EXTRA[span60]="diffusion.span_noise_prob=0.6"
+EXTRA[selfcond]="diffusion.self_cond=true"  # logit head + self-conditioning (50% zeroed x0_prev, two-pass training)
 
 run_one() { # rung seed
   rung=$1; seed=$2; suf=""; [ "$seed" != "0" ] && suf="_s$seed"
