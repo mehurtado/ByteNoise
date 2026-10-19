@@ -175,3 +175,39 @@ logits + warp, embed_norm 8, compact U-Net 14.4M, fp32, bs32, lr 3e-4, seed 0; 2
 | uniform 250, s=1.0 | 0.561 | 1.000 | 0.944 | 0.0015 | 0.000 | 0.09 |
 | uniform 250, s=0.8 | 0.623 | 1.000 | 0.919 | 0.0028 | 0.000 | 0.09 |
 Val CE (EMA, uniform t): 0.4225 @5k, 0.3925 @65k, 0.3837 @248k (flat the last ~30k). Matched train-vs-val CE (scripts/overfit_check.py, 1024 windows): train 0.3865 / val 0.3772 (seed 0), 0.4225 / 0.4121 (seed 1): no overfitting after 12.7 epochs. eval.py val: ce 0.3878, x0 acc by t quartile 1.00/1.00/0.994/0.574, valid UTF-8 0.969, memorization 0.008 (its own sample draw). Recovery t=200..999: 1.00/1.00/0.998/0.866/0.063. Monitor word-hit (16 samples): 0.48 @10k -> ~0.58-0.60 from 110k, flat after. Versus the 45-min L2 run: word-hit 0.558 -> 0.587 (within noise), val CE 0.396 -> 0.384 - more compute gave a small, saturating gain. Samples are still not coherent English; s<1 gains are largely frequent-short-word substitution with lower diversity. Single seed, +-0.03-0.04. See FINAL_REPORT.md.
+
+### Ladder: evaluation harness + equal-update width/hybrid ladder (scripts/ladder_eval.py, ngram_score.py, ladder_report.py, run_ladder.sh)
+**Harness.** EMA weights, 128 samples (4 batches of 32, fixed per-batch seeds so initial noise is paired across runs), 1000-step DDPM at s=1.0 and s=0.8 (s only for logits runs; eps runs have s=1.0 only), natural-v1 word list. Metrics: word_hit with 95% bootstrap CI (resampling samples; this is sampling noise only, not training-seed noise), valid_utf8, distinct_4gram, repeated_8gram, memorization (vs the run's own train set), bits/byte under a scoring-only byte-level order-5 interpolated Kneser-Ney model trained on natural-v1 train (cached data/ngram_natural-v1.pkl, gitignored; normalisation checked, max |sum P - 1| = 5e-8; scored at positions >= 4 so all have a full history). Controls on the same 128 real val windows: real val 2.05 bpb / word_hit 0.94; letters shuffled within window 7.61 / 0.13; bytes shuffled 8.12 / 0.31; (train-window bpb 1.96). Deterministic val CE (2048 evenly spaced val windows, fixed t and noise, same for all runs) overall, t in [500,750), t>=750, logits runs only. s/sample at batch 32 (first batch dropped as warm-up), params, train peak VRAM and ms/update (median of consecutive-log deltas) from metrics.jsonl. Outputs ladder_eval.json/.md/ladder_samples.json (hex) per run; pre-existing runs were re-scored read-only into runs/_ladder_rescore/<run>/ (their own dirs untouched).
+
+**Part 1 re-score** (s=1.0; val CE = this harness's deterministic CE, not comparable to the old uniform-t eval numbers to 3 digits):
+| run | updates | word_hit [CI] | n-gram bpb | utf8 | val CE | CE t>=750 | s=0.8 wh / bpb |
+|---|---|---|---|---|---|---|---|
+| L1 | 42.1k | 0.540 [0.527,0.551] | 4.25 | 0.961 | 0.3810 | 1.548 | 0.604 / 3.70 |
+| L2 | 45.5k | 0.562 [0.550,0.573] | 4.04 | 0.969 | 0.3829 | 1.537 | 0.608 / 3.59 |
+| L3 (R=16; CE not comparable) | 48.6k | 0.509 [0.497,0.521] | 4.47 | 0.961 | 0.2082 | 0.806 | 0.580 / 3.90 |
+| wide192 45 min | 25.6k | 0.559 [0.547,0.570] | 4.05 | 0.984 | 0.3827 | 1.540 | 0.620 / 3.54 |
+| v2 long 4 h | 248k | 0.581 [0.567,0.594] | 3.89 | 0.992 | 0.3733 | 1.502 | 0.630 / 3.46 |
+| eps gate | 24.7k | 0.338 [0.328,0.347] | 6.05 | 0.859 | - | - | n/a |
+| eps hybrid (bf16) | 19.9k | 0.364 [0.352,0.376] | 5.65 | 0.953 | - | - | n/a |
+| eps hybrid+selfcond | 17.6k | 0.314 [0.302,0.326] | 5.87 | 0.938 | - | - | n/a |
+All 8 scored (eps runs via model.sample, no CE/s=0.8). **Metric validation:** Spearman(word_hit, -bpb) = +0.98 over 8 runs at s=1.0 and +1.00 over the 5 logits runs at s=0.8; the only rank swap is among the worst two eps runs (gate vs hybrid+selfcond). Both put long run > L2 ~ wide192 > L1 > L3 > eps hybrid > eps gate. Caveat: the n-gram scorer and word_hit are both local-statistics metrics and share blind spots (neither sees meaning); their agreement shows the scorer is a sane, more continuous second metric, not that either measures coherence. Note also that long run vs L2/wide192 at s=1.0 is only ~0.02 word_hit (CIs overlap) but 0.15-0.17 bpb.
+
+**Part 2 ladder.** L2 recipe (logits, warp, embed_norm 8, ce_weight 0, x0_rescale, bs32, lr 3e-4, fp32, natural-v1), 25,000 updates, max_seconds unset (0), 2 seeds each. LR schedule verified tied to max_updates (cosine, 3e-4 -> 1e-6 exactly at 25000/25000 in the smoke and real logs; no warmup). Hybrid = `--preset hybrid` (dim 256, 7 layers) with diffusion.param=logits, fp32: trained fine without bf16 (3.5 GB peak VRAM). No crashes or resumes. Seed-1 checkpoints deleted after eval; seed-0 checkpoints kept.
+Val CE (EMA, uniform t, from metrics.jsonl) at 6k/12k/18k/25k: w48 0.4324/0.4198/0.4149/0.4136 (s1 0.4320/0.4200/0.4153/0.4138); w96 0.4144/0.4045/0.3994/0.3980 (s1 0.4136/0.4037/0.3989/0.3973); w192 0.4057/0.4000/0.3955/0.3942 (s1 0.4052/0.3990/0.3949/0.3927); hybrid 0.3960/0.3858/0.3814/0.3799 (s1 0.3937/0.3831/0.3786/0.3771).
+Per configuration, mean +- half the seed difference (n=2, so "spread" is |s0-s1|/2 and itself uncertain):
+| metric | w48 | w96 | w192 | hybrid+logits |
+|---|---|---|---|---|
+| params | 3.65M | 14.45M | 57.5M | 14.05M |
+| ms/update (median) | 51.5 | 55.2 | 119 (108.7 / 129.5) | 163.3 |
+| train peak VRAM | 328 MB | 708 MB | 1799 MB | 3499 MB |
+| val CE overall | 0.4051 +- 0.0005 | 0.3901 +- 0.0004 | 0.3855 +- 0.0005 | 0.3708 +- 0.0002 |
+| val CE t>=750 | 1.616 +- 0.003 | 1.563 +- 0.002 | 1.551 +- 0.002 | 1.499 +- 0.000 |
+| word_hit s=1.0 | 0.437 +- 0.005 | 0.521 +- 0.001 | 0.549 +- 0.002 | 0.613 +- 0.006 |
+| n-gram bpb s=1.0 | 4.96 +- 0.03 | 4.31 +- 0.01 | 4.15 +- 0.04 | 3.73 +- 0.02 |
+| valid_utf8 | 0.949 | 0.922 | 0.957 | 0.891 (all +-0.02, noisy at 128 samples) |
+| distinct_4gram | 0.949 | 0.939 | 0.942 | 0.939 |
+| word_hit / bpb at s=0.8 | 0.492 / 4.48 | 0.595 / 3.74 | 0.617 / 3.62 | 0.720 / 2.98 |
+| s/sample (b32) | 0.35 | 0.35 | 0.75 | 1.21 |
+| sampling peak VRAM | 60 MB | 121 MB | 325 MB | 261 MB |
+Paired bootstrap on samples (sampling noise only): w96-w48 d_bpb -0.65 [-0.70,-0.61], d_wh +0.084; w192-w96 -0.16 [-0.21,-0.12], +0.028 [+0.019,+0.037]; hyb-w96 -0.58 [-0.63,-0.54], +0.092 [+0.082,+0.101]. Seed-to-seed differences (s0-s1): bpb 0.03-0.09, word_hit <=0.012, val CE <=0.0011.
+Honesty notes: (1) ladder_hyb_s0 wall time was 11,023 s vs 4,113 s for s1 though ms/update medians agree (163.8 vs 162.8); the stretch is not explained by the logs (machine sleep or contention with other work) and does not affect the update-matched results. (2) ladder_w192 ms/update differs between seeds (108.7 vs 129.5), so w192 cost is +-10%. (3) Only 2 seeds; spread estimates are crude. (4) The CE numbers differ slightly between metrics.jsonl (32 batches) and the harness (2048 windows) as they use different t/noise draws. (5) Hybrid valid_utf8 is the lowest (0.89), so its text is not uniformly cleaner; the gain is in word/n-gram statistics and CE. (6) Memorization 0.000 everywhere.

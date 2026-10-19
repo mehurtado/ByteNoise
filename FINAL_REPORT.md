@@ -66,3 +66,6 @@ Honest reading: the output has English-like letter statistics, correct spacing, 
 6. A semantic metric beyond word-hit (e.g. byte-level held-out likelihood bounds or bigram validity).
 
 Artifacts: runs/diff_nat_v2_long_s0/{gate_text.txt, eval_out.txt, recovery.txt, final_sweep.json, overfit_check.txt, samples_log.md}; scripts/final_sweep.py, scripts/overfit_check.py.
+
+## Ladder results (addendum)
+New harness (scripts/ladder_eval.py: 128 paired samples, bootstrap CIs, byte-level Kneser-Ney n-gram bits/byte scorer, deterministic CE by noise level) re-scored the earlier runs; n-gram score and word-hit rank them nearly identically (Spearman +0.98), so the scorer is usable as a second metric. Equal-update ladder (25k updates, natural-v1, L2 recipe, 2 seeds each, mean val CE / word-hit / n-gram bpb at s=1.0): U-Net w48 (3.7M) 0.405 / 0.44 / 4.96; w96 (14.4M) 0.390 / 0.52 / 4.31; w192 (57.5M) 0.386 / 0.55 / 4.15; hybrid denoiser with logit head (14.0M, fp32) 0.371 / 0.61 / 3.73. Seed spread is tiny (CE <=0.001, word-hit <=0.01, bpb <=0.09), so all of these gaps are real: width helps with diminishing returns (w96->w192 costs 2.2x time for CE -0.005), and hybrid+logits beats w96 and even w192 at equal updates at ~3x w96 time per update (163 vs 55 ms) and 5x VRAM (3.5 GB). Samples remain non-English; see EXPERIMENTS.md for the full tables and caveats.
