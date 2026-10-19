@@ -2,6 +2,7 @@
 # Rung runs (width 96, natural-v1, L2 recipe). Sequential and re-runnable: finished steps are skipped, crashed runs resume.
 #   scripts/run_rungs.sh screen                 seed-0 screening runs
 #   scripts/run_rungs.sh confirm R4 span30 ...  seed-1 runs of the named rungs (checkpoints of seed 1 are deleted after eval)
+#   scripts/run_rungs.sh baseline               width-96 baseline seeds 2,3 (runs/ladder_w96_s2,s3) for the 4-seed spread
 #   scripts/run_rungs.sh one bs128_25k          a single rung by name (seed 0)
 cd "$(dirname "$0")/.."
 PY=.venv/Scripts/python
@@ -14,6 +15,7 @@ declare -A EXTRA UPD
 EXTRA[bs128]="train.batch_size=128 train.learning_rate=0.0006 train.eval_interval=500 train.eval_batches=8 train.save_interval=2000"; UPD[bs128]=6250
 # equal-updates companion (25000 updates at bs128 = 4x the examples), only if time permits
 EXTRA[bs128_25k]="train.batch_size=128 train.learning_rate=0.0006 train.eval_interval=2000 train.eval_batches=8"; UPD[bs128_25k]=25000
+EXTRA[base]=""
 EXTRA[R4]="model.embed_norm=4"
 EXTRA[R6]="model.embed_norm=6"
 EXTRA[tied_R8]="model.tied_head=true"
@@ -24,7 +26,8 @@ EXTRA[span60]="diffusion.span_noise_prob=0.6"
 
 run_one() { # rung seed
   rung=$1; seed=$2; suf=""; [ "$seed" != "0" ] && suf="_s$seed"
-  name=rung_${rung}${suf}; d=runs/$name; upd=${UPD[$rung]:-25000}
+  name=rung_${rung}${suf}; [ "$rung" = "base" ] && name=ladder_w96_s$seed  # base = the ladder's width-96 recipe, extra seeds
+  d=runs/$name; upd=${UPD[$rung]:-25000}
   if [ ! -f $d/ladder_eval.json ]; then
     if [ ! -f $d/status.json ]; then
       if [ -d $d ] && [ -f $d/checkpoint.pt ]; then
@@ -61,6 +64,7 @@ case "$1" in
     for r in span30 span60; do run_one $r 0; done
     say "SCREEN DONE" ;;
   confirm) shift; for r in "$@"; do run_one $r 1; done; say "CONFIRM DONE" ;;
+  baseline) for sd in 2 3; do run_one base $sd; done; say "BASELINE DONE" ;;
   one) run_one $2 0 ;;
-  *) echo "usage: $0 screen | confirm <rung>... | one <rung>"; exit 1 ;;
+  *) echo "usage: $0 screen | baseline | confirm <rung>... | one <rung>"; exit 1 ;;
 esac

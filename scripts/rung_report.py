@@ -41,7 +41,7 @@ def mean_of(ms):
 
 
 def gather():
-    base = [load(f"runs/ladder_w96_s{s}/ladder_eval.json") for s in (0, 1)]
+    base = [load(f"runs/ladder_w96_s{s}/ladder_eval.json") for s in (0, 1, 2, 3)]
     base = [b for b in base if b]
     rungs = {}
     for name in ORDER:
@@ -51,8 +51,12 @@ def gather():
     return base, rungs
 
 
+SPREAD = {}  # metric -> minimal real difference, 2*sqrt(2)*SD over the baseline seeds (set in main when >= 3 seeds)
+
+
 def beats(m, b):
-    return (m["ce"] is not None and m["ce"] - b["ce"] <= -CE_TOL) or m["wh"] - b["wh"] >= WH_TOL or m["bpb"] - b["bpb"] <= -BPB_TOL
+    ce_t, wh_t, bpb_t = SPREAD.get("ce", CE_TOL), SPREAD.get("wh", WH_TOL), SPREAD.get("bpb", BPB_TOL)
+    return (m["ce"] is not None and m["ce"] - b["ce"] <= -ce_t) or m["wh"] - b["wh"] >= wh_t or m["bpb"] - b["bpb"] <= -bpb_t
 
 
 def row(label, m, b=None):
@@ -77,7 +81,15 @@ def main():
     base, rungs = gather()
     if not base:
         sys.exit("no baseline ladder_w96 results")
-    B = mean_of([metrics(b) for b in base])
+    bm = [metrics(b) for b in base]
+    B = mean_of(bm)
+    sd_rows = []
+    if len(bm) >= 3:  # 2*sqrt(2)*SD: the difference of two single runs that is ~95% unlikely under seed noise alone
+        for k, nm in (("ce", "ce"), ("ce750", None), ("wh", "wh"), ("wh8", None), ("bpb", "bpb"), ("bpb8", None)):
+            v = [m[k] for m in bm]; sd = float(np.std(v, ddof=1))
+            sd_rows.append((k, float(np.mean(v)), sd, 2 * 2 ** 0.5 * sd))
+            if nm:
+                SPREAD[nm] = 2 * 2 ** 0.5 * sd
     if "--flag" in sys.argv:
         print(" ".join(n for n, rs in rungs.items() if beats(metrics(rs[0]), B)))
         return
@@ -85,7 +97,7 @@ def main():
          "| config | params | ms/upd | val CE all | CE t>=750 | word_hit s=1.0 [CI] | word_hit s=0.8 | bpb s=1.0 [CI] | bpb s=0.8 | utf8 | d4 | s/sample |",
          "|---|---|---|---|---|---|---|---|---|---|---|---|",
          row("w96 baseline (mean s0,s1)", B)]
-    for i, b in enumerate(base):
+    for i, b in enumerate(base):  # noqa
         L.append(row(f"  baseline s{i}", metrics(b)))
     out = {"baseline": B, "rungs": {}}
     for name, rs in rungs.items():
@@ -94,7 +106,13 @@ def main():
                 m = metrics(R)
                 L.append(row(f"rung_{name} s{s} ({m['updates']} upd)", m, B))
                 out["rungs"][f"{name}_s{s}"] = dict(m, beats_baseline=bool(beats(m, B)))
-    L += ["", f"Confirmation threshold (seed 0 vs baseline mean): CE <= -{CE_TOL}, or word_hit >= +{WH_TOL}, or bpb <= -{BPB_TOL}. Candidates: "
+    if sd_rows:
+        L += ["", f"Baseline seed spread over {len(bm)} seeds (mean, SD, minimal real difference 2*sqrt(2)*SD for a two-run comparison):", "",
+              "| metric | mean | SD | min real diff |", "|---|---|---|---|"]
+        L += [f"| {k} | {m:.4f} | {sd:.4f} | {md:.4f} |" for k, m, sd, md in sd_rows]
+        out["baseline_spread"] = {k: dict(mean=m, sd=sd, min_diff=md) for k, m, sd, md in sd_rows}
+    L += ["", f"Confirmation rule (seed 0 vs baseline mean): CE <= -{SPREAD.get('ce', CE_TOL):.4f}, or word_hit >= +{SPREAD.get('wh', WH_TOL):.4f}, or bpb <= -{SPREAD.get('bpb', BPB_TOL):.3f}"
+          + (" (4-seed SD based)" if SPREAD else " (fallback fixed thresholds)") + ". Candidates: "
           + (" ".join(n for n, rs in rungs.items() if beats(metrics(rs[0]), B)) or "none")]
     if "bs128" in rungs:  # equal-examples val-CE trajectory (quick_eval on the first 1024 val windows; t/noise draws differ between batch sizes)
         L += ["", "## Batch-size rung: EMA val CE (metrics.jsonl, quick_eval) at equal examples seen", "",
