@@ -35,7 +35,7 @@ def infill(model, prompts, resample=1, seed=0):
 
     def step(x, i):
         t = torch.full((n,), i, device=dev, dtype=torch.long)
-        x0 = gd.predict_start_from_noise(x, t, gd.denoise_model(x, t))
+        x0 = gd.predict_start_from_noise(x, t, gd.denoise(x, t))
         x0 = x0 * (R / x0.norm(dim=-1, keepdim=True).clamp(min=1e-8))
         mean, _, logvar = gd.q_posterior(x0, x, t)
         xp = mean if i == 0 else mean + (0.5 * logvar).exp() * rn()

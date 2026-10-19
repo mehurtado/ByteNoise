@@ -27,6 +27,7 @@ class ModelConfig:
     hybrid_ffn_mult: float = 4.0
     hybrid_ngram_kernel: int = 5      # odd
     embed_norm: float = 0.0           # >0: embedding table rows are L2-normalised to this norm (e.g. sqrt(byte_embed_dim) = unit per-element RMS); 0 = off (excluded from hash)
+    tied_head: bool = False           # logits only: logits = exp(log_scale) * z @ E^T (z = byte_embed_dim projection of the final features) instead of a separate 256-way layer; False = off (excluded from hash)
 
     @property
     def attn_dim_head(self):
@@ -65,6 +66,7 @@ class DiffusionConfig:
     param: str = "eps"                # "eps" (predict noise) | "logits" (CDCD-style: 256 byte logits, x0_hat = softmax @ E; CE is the loss). "eps" excluded from hash
     t_sampling: str = "uniform"       # "uniform" | "warp" (loss-EMA-weighted timestep sampling, 50 bins); "uniform" excluded from hash
     x0_mse_weight: float = 0.0        # logits only: weight of an extra MSE(x0_hat, E[x]) term (E detached); 0 = off (excluded from hash)
+    span_noise_prob: float = 0.0      # logits only: fraction of training examples noised per word segment (independent t per segment) + a sqrt(alpha_bar) input channel; 0 = off (excluded from hash)
 
 
 @dataclass(frozen=True)
@@ -121,8 +123,8 @@ class Config:
     def architecture_hash(self):
         full = self.to_dict()
         if self.arch == "diffusion":
-            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v) and not (k == "ce_schedule" and v == "const") and not (k == "param" and v == "eps") and not (k == "t_sampling" and v == "uniform") and not (k == "x0_mse_weight" and v == 0.0)}  # sampler-only / default-off; keeps old hashes
-            mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0)}
+            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v) and not (k == "ce_schedule" and v == "const") and not (k == "param" and v == "eps") and not (k == "t_sampling" and v == "uniform") and not (k == "x0_mse_weight" and v == 0.0) and not (k == "span_noise_prob" and v == 0.0)}  # sampler-only / default-off; keeps old hashes
+            mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0) and not (k == "tied_head" and not v)}
             hyb = [k for k in mod if k.startswith("hybrid_")]
             if self.model.denoiser == "unet":  # birnn/hybrid-only fields don't exist for U-Net configs; keeps old hashes
                 mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult", *hyb)}
@@ -226,6 +228,10 @@ def validate(cfg):
         errors.append(f"unknown diffusion.t_sampling {d.t_sampling!r}")
     if m.embed_norm < 0 or d.x0_mse_weight < 0:
         errors.append("embed_norm and x0_mse_weight must be >= 0")
+    if not 0.0 <= d.span_noise_prob <= 1.0:
+        errors.append("span_noise_prob must be in [0, 1]")
+    if (m.tied_head or d.span_noise_prob > 0) and d.param != "logits":
+        errors.append("model.tied_head and diffusion.span_noise_prob need diffusion.param=logits")
     if d.param == "logits" and cfg.arch == "diffusion" and m.vocab_size != 256:
         errors.append("diffusion.param=logits needs vocab_size 256")
     if t.precision not in ("fp32", "bf16", "fp16"):

@@ -363,7 +363,7 @@ def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None,
     def log_eval():
         if val_tokens is None:
             return None
-        row = {"eval": True, "update": progress["updates"], "elapsed": progress["elapsed"]}
+        row = {"eval": True, "update": progress["updates"], "examples": progress["examples"], "elapsed": progress["elapsed"]}
         for which, m in (("", model), ("ema_", ema.model)):
             with torch.autocast(ac_dev, dtype=ac_dtype, enabled=bool(ac_dev)) if ac_dev else torch.autocast("cpu", enabled=False):
                 for k, v in quick_eval(m, cfg, val_tokens, device, t.eval_batches).items():

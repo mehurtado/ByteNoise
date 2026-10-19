@@ -103,7 +103,7 @@ def main():
         torch.manual_seed(a.seed)
         xt = torch.randn(a.n, L, E, device=dev)
         t = torch.full((a.n,), T - 1, device=dev, dtype=torch.long)
-        pred = gd.denoise_model(xt, t)
+        pred = gd.denoise(xt, t)
         x0 = gd.predict_start_from_noise(xt, t, pred)
         pb = model.get_logits(x0).argmax(-1).cpu().to(torch.uint8)
     s = stats(samples)
