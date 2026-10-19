@@ -199,7 +199,7 @@ def eval_diffusion(model, data_name, split="val", device="cpu", num_buckets=4, w
                 e0 = gd.denoise(xt, t)
                 pred = gd.denoise(xt, t, x0_prev=gd.x0_estimate(xt, t, e0, x0.norm(dim=-1).mean(), table=table))
             else:
-                pred = gd.denoise_model(xt, t)
+                pred = gd.denoise(xt, t)
             if gd.param == "logits":  # network output = byte logits; noise_loss reported for the implied eps; x0 acc = argmax(logits) acc
                 lg = pred.float()
                 d = noise - gd.eps_from_x0(xt, t, gd.x0_from_logits(lg, table))

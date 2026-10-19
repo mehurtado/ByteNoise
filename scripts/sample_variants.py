@@ -23,7 +23,7 @@ def sample_variant(model, n, clamp="none", ddim=False, seed=0, A=None, R=None, f
     x = torch.randn(shape, device=dev, generator=g)
     for i in reversed(range(gd.num_timesteps)):
         t = torch.full((n,), i, device=dev, dtype=torch.long)
-        eps = gd.denoise_model(x, t)
+        eps = gd.denoise(x, t)
         x0 = gd.predict_start_from_noise(x, t, eps)
         if clamp in ("abs", "both"):
             x0 = x0.clamp(-A, A)

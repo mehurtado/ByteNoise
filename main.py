@@ -100,6 +100,37 @@ class ByteEmbedding(nn.Module):
         # x: (batch_size, seq_len)
         return F.embedding(x, self.table()) # Output: (batch_size, seq_len, embed_dim)
 
+class TiedHead(nn.Module):
+    """Output head tied to the embedding table: logits = exp(log_scale) * z @ E^T, z = (b, n, byte_embed_dim) features.
+
+    E is the table as constrained by embed_norm (rows of norm embed_norm) and is NOT detached here: the CE gradient also trains
+    E (standard weight tying; with embed_norm it can only move rows along the sphere, and the input-embedding path already trains
+    E through CE). The learnable scalar log_scale starts at -log(row norm) so initial logits are ~ the std of z (O(1)). x0_hat =
+    softmax(logits) @ E still detaches E (GaussianDiffusion.x0_from_logits). The embedder is kept in a plain list so it is not
+    registered a second time (state_dict has it once, under byte_embedder) while copy.deepcopy (EMA) still points the copy at the
+    copied embedder."""
+    def __init__(self, embedder, init_norm):
+        super().__init__()
+        self._emb = [embedder]
+        self.log_scale = nn.Parameter(torch.tensor(-math.log(init_norm)))
+
+    def forward(self, z):
+        return self.log_scale.exp() * (z.float() @ self._emb[0].table().float().t())
+
+
+def word_segment_ids(x_bytes):
+    """(b, n) int segment id per position for word-structured noise.
+
+    Letters are ASCII A-Za-z and bytes >= 128 (so UTF-8 multibyte characters stay inside a word). A segment is a maximal letter run
+    together with the non-letter bytes (whitespace, punctuation, newlines, digits) that PRECEDE it, so separators take the noise
+    level of the following word; non-letter bytes after the last word of the window form a final segment of their own."""
+    letter = (((x_bytes | 32) >= 97) & ((x_bytes | 32) <= 122)) | (x_bytes >= 128)
+    end = letter.clone()
+    end[:, :-1] &= ~letter[:, 1:]  # last letter of each run
+    end = end.long()
+    return end.cumsum(1) - end
+
+
 # --- U-Net Components ---
 
 class ResnetBlock1D(nn.Module):
@@ -481,9 +512,13 @@ class GaussianDiffusion(nn.Module):
         ce_schedule='const',
         param='eps',
         t_sampling='uniform',
-        x0_mse_weight=0.0
+        x0_mse_weight=0.0,
+        head=None,
+        span_noise_prob=0.0
     ):
         super().__init__()
+        self.head = head  # optional TiedHead applied to the denoiser output (param=logits)
+        self.span_noise_prob = span_noise_prob
         self.param = param
         self.t_sampling = t_sampling
         self.x0_mse_weight = x0_mse_weight
@@ -533,27 +568,35 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer('posterior_mean_coef1', betas * torch.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod))
         self.register_buffer('posterior_mean_coef2', (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod))
 
-    def denoise(self, x_t, t, clean_mask=None, x0_prev=None):
+    def denoise(self, x_t, t, clean_mask=None, x0_prev=None, sqrt_ab=None):
         """Call the denoiser; with cond_prompt a 1-channel clean-position mask (b, n) is appended to the input.
 
-        With self_cond the previous x0 estimate (b, n, d) is appended last (zeros when x0_prev is None)."""
+        With span_noise_prob > 0 a 1-channel per-position noise level sqrt(alpha_bar) (b, n) follows (sqrt_ab, or the constant
+        sqrt(alpha_bar_t) when None, as in sampling/eval). With self_cond the previous x0 estimate (b, n, d) is appended last
+        (zeros when x0_prev is None). With a tied head the output is the byte logits."""
         if self.cond_prompt:
             m = torch.zeros(x_t.shape[:2], device=x_t.device, dtype=x_t.dtype) if clean_mask is None else clean_mask.to(x_t.dtype)
             x_t = torch.cat((x_t, m.unsqueeze(-1)), dim=-1)
+        if self.span_noise_prob > 0:
+            sa = self.sqrt_alphas_cumprod[t][:, None].expand(x_t.shape[:2]) if sqrt_ab is None else sqrt_ab
+            x_t = torch.cat((x_t, sa.to(x_t.dtype).unsqueeze(-1)), dim=-1)
         if self.self_cond:
             xp = torch.zeros_like(x_t[..., :self.denoise_model_embed_dim(x_t)]) if x0_prev is None else x0_prev.to(x_t.dtype)
             x_t = torch.cat((x_t, xp), dim=-1)
-        return self.denoise_model(x_t, t)
+        out = self.denoise_model(x_t, t)
+        return out if self.head is None else self.head(out)
 
     def denoise_model_embed_dim(self, x_t):
-        return x_t.shape[-1] - int(self.cond_prompt)
+        return x_t.shape[-1] - int(self.cond_prompt) - int(self.span_noise_prob > 0)
 
     def x0_from_logits(self, logits, table):
         """x0_hat = softmax(logits) @ E: a per-position convex combination of embeddings (E is detached here)."""
         return F.softmax(logits.float(), dim=-1) @ table.detach().float()
 
     def eps_from_x0(self, x_t, t, x0):
-        """eps implied by an x0 estimate: (x_t - sqrt(ab) x0) / sqrt(1 - ab)."""
+        """eps implied by an x0 estimate: (x_t - sqrt(ab) x0) / sqrt(1 - ab). t may be (b,) or per-position (b, n)."""
+        if t.dim() == 2:
+            return (x_t - self.sqrt_alphas_cumprod[t].unsqueeze(-1) * x0) / self.sqrt_one_minus_alphas_cumprod[t].unsqueeze(-1)
         return (x_t - extract(self.sqrt_alphas_cumprod, t, x_t.shape) * x0) / extract(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape)
 
     def x0_estimate(self, x_t, t, eps, target_norm=None, table=None):
@@ -693,6 +736,18 @@ class GaussianDiffusion(nn.Module):
         t = lo + (torch.rand(batch_size, device=device) * (hi - lo)).long()
         return torch.minimum(t, hi - 1).long()
 
+    def span_timesteps(self, x_bytes, t):
+        """Per-example Bernoulli(span_noise_prob) switch to word-structured noise: such an example draws an independent timestep per
+        word segment (word_segment_ids) from the same t-sampling distribution (uniform / warp) as sample_t. Other examples keep their
+        single t at every position. Returns (t_eff (b,), t_pos (b, n)); t_eff is the example's t, or for span examples the rounded
+        mean of its per-position timesteps (time embedding, loss buckets, warp statistics)."""
+        b, n = x_bytes.shape
+        t_seg = self.sample_t(b * n, x_bytes.device).view(b, n).gather(1, word_segment_ids(x_bytes))
+        use = torch.rand(b, device=x_bytes.device) < self.span_noise_prob
+        t_pos = torch.where(use[:, None], t_seg, t[:, None])
+        t_eff = torch.where(use, t_seg.float().mean(1).round().long(), t)
+        return t_eff, t_pos
+
     @torch.no_grad()
     def update_t_stats(self, t, per_sample_loss):
         v = per_sample_loss.detach().float()
@@ -706,7 +761,7 @@ class GaussianDiffusion(nn.Module):
         self.t_loss_ema.copy_(torch.where(present, new, self.t_loss_ema))
         self.t_loss_seen.copy_(self.t_loss_seen | present)
 
-    def _logits_losses(self, x_start_embed, x_t_embed, t, noise, logits, x_bytes, w, table):
+    def _logits_losses(self, x_start_embed, x_t_embed, t, noise, logits, x_bytes, w, table, t_noise=None):
         """param=logits: CE(logits, byte) is the loss at every t (no 1/sqrt(ab) factor anywhere)."""
         logits = logits.float()
         ce = F.cross_entropy(logits.reshape(-1, logits.size(-1)), x_bytes.reshape(-1), reduction='none').view(logits.shape[:2])
@@ -720,7 +775,7 @@ class GaussianDiffusion(nn.Module):
             loss = loss + self.x0_mse_weight * ((mse * w).sum(1) / wsum).mean()
             stats['x0_mse'] = ((mse * w).sum(1) / wsum).mean().detach()
         # diagnostics comparable with the eps parametrisation: noise-prediction error of the implied eps
-        err = (noise - self.eps_from_x0(x_t_embed.float(), t, x0_hat.detach())).pow(2).mean(dim=-1)
+        err = (noise - self.eps_from_x0(x_t_embed.float(), t if t_noise is None else t_noise, x0_hat.detach())).pow(2).mean(dim=-1)
         ps_noise = ((err * w).sum(1) / wsum).detach()
         stats.update({'noise_loss': ps_noise.mean(), 'per_sample_noise_loss': ps_noise, 'x0_pred_norm': x0_hat.detach().norm(dim=-1).mean(),
                       'x_start_norm': x_start_embed.detach().norm(dim=-1).mean(),
@@ -738,7 +793,13 @@ class GaussianDiffusion(nn.Module):
         if not self.cond_prompt:
             clean_mask = None
 
-        x_t_embed = self.q_sample(x_start_embed, t, noise=noise)
+        t_pos = sqrt_ab = None
+        if self.span_noise_prob > 0 and self.training and x_bytes is not None:  # word-structured noise only while training
+            t, t_pos = self.span_timesteps(x_bytes, t)
+            sqrt_ab = self.sqrt_alphas_cumprod[t_pos]
+            x_t_embed = sqrt_ab.unsqueeze(-1) * x_start_embed + self.sqrt_one_minus_alphas_cumprod[t_pos].unsqueeze(-1) * noise
+        else:
+            x_t_embed = self.q_sample(x_start_embed, t, noise=noise)
         if clean_mask is not None:
             x_t_embed = torch.where(clean_mask.unsqueeze(-1), x_start_embed, x_t_embed)
         logits_mode = self.param == 'logits'
@@ -747,16 +808,16 @@ class GaussianDiffusion(nn.Module):
         x0_prev = None
         if self.self_cond:
             with torch.no_grad():
-                eps0 = self.denoise(x_t_embed, t, clean_mask, x0_prev=None)
+                eps0 = self.denoise(x_t_embed, t, clean_mask, x0_prev=None, sqrt_ab=sqrt_ab)
                 tn = x_start_embed.detach().norm(dim=-1).mean()
                 x0_prev = self.x0_estimate(x_t_embed, t, eps0, tn, table=table)
                 keep = (torch.rand(x_start_embed.shape[0], device=x_start_embed.device) >= 0.5).to(x0_prev.dtype)
                 x0_prev = x0_prev * keep[:, None, None]  # prob 0.5 per example: zeros
-        predicted_noise = self.denoise(x_t_embed, t, clean_mask, x0_prev=x0_prev)
+        predicted_noise = self.denoise(x_t_embed, t, clean_mask, x0_prev=x0_prev, sqrt_ab=sqrt_ab)
 
         if logits_mode:
             w = torch.ones(x_bytes.shape, device=x_bytes.device) if clean_mask is None else (~clean_mask).float()
-            loss, stats = self._logits_losses(x_start_embed, x_t_embed, t, noise, predicted_noise, x_bytes, w, table)
+            loss, stats = self._logits_losses(x_start_embed, x_t_embed, t, noise, predicted_noise, x_bytes, w, table, t_noise=t_pos)
             if self.training and self.t_sampling == 'warp':
                 self.update_t_stats(t, stats['per_sample_loss'])
             return loss, stats
@@ -848,17 +909,19 @@ class ByteDiffusionLM(nn.Module):
         m, d = cfg.model, cfg.diffusion
         self.cfg = cfg
         self.byte_embedder = ByteEmbedding(m.vocab_size, m.byte_embed_dim, m.embed_norm)
-        out_dim = m.vocab_size if d.param == 'logits' else m.byte_embed_dim  # logits head: one logit per byte
+        out_dim = m.vocab_size if d.param == 'logits' and not m.tied_head else m.byte_embed_dim  # logits head: one logit per byte (tied head: a byte_embed_dim projection)
+        in_extra = int(d.cond_prompt) + int(d.span_noise_prob > 0)  # extra input channels: clean mask, sqrt(alpha_bar)
+        head = TiedHead(self.byte_embedder, m.embed_norm if m.embed_norm > 0 else math.sqrt(m.byte_embed_dim)) if m.tied_head else None
 
         if m.denoiser == "birnn":  # attribute keeps the name denoise_unet so state_dict keys stay uniform
-            self.denoise_unet = BiRNNDenoiser(m.model_dim, m.byte_embed_dim + int(d.cond_prompt), m.rnn_layers, m.rnn_conv, m.rnn_ffn_mult,
+            self.denoise_unet = BiRNNDenoiser(m.model_dim, m.byte_embed_dim + in_extra, m.rnn_layers, m.rnn_conv, m.rnn_ffn_mult,
                                               m.dropout, out_dim=out_dim)
         elif m.denoiser == "hybrid":
-            self.denoise_unet = HybridDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + int(d.cond_prompt), out_dim)
+            self.denoise_unet = HybridDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + in_extra, out_dim)
         else:
             self.denoise_unet = UNet1D(
                 model_dim=m.model_dim,
-                in_embed_dim=m.byte_embed_dim * (1 + int(d.self_cond)) + int(d.cond_prompt),
+                in_embed_dim=m.byte_embed_dim * (1 + int(d.self_cond)) + in_extra,
                 out_dim=out_dim,
                 dim_mults=m.dim_mults,
                 time_emb_dim_mult=m.time_emb_mult,
@@ -885,6 +948,8 @@ class ByteDiffusionLM(nn.Module):
             param=d.param,
             t_sampling=d.t_sampling,
             x0_mse_weight=d.x0_mse_weight,
+            head=head,
+            span_noise_prob=d.span_noise_prob,
         )
 
     def embedding_table(self):
