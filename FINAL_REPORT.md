@@ -69,3 +69,12 @@ Artifacts: runs/diff_nat_v2_long_s0/{gate_text.txt, eval_out.txt, recovery.txt, 
 
 ## Ladder results (addendum)
 New harness (scripts/ladder_eval.py: 128 paired samples, bootstrap CIs, byte-level Kneser-Ney n-gram bits/byte scorer, deterministic CE by noise level) re-scored the earlier runs; n-gram score and word-hit rank them nearly identically (Spearman +0.98), so the scorer is usable as a second metric. Equal-update ladder (25k updates, natural-v1, L2 recipe, 2 seeds each, mean val CE / word-hit / n-gram bpb at s=1.0): U-Net w48 (3.7M) 0.405 / 0.44 / 4.96; w96 (14.4M) 0.390 / 0.52 / 4.31; w192 (57.5M) 0.386 / 0.55 / 4.15; hybrid denoiser with logit head (14.0M, fp32) 0.371 / 0.61 / 3.73. Seed spread is tiny (CE <=0.001, word-hit <=0.01, bpb <=0.09), so all of these gaps are real: width helps with diminishing returns (w96->w192 costs 2.2x time for CE -0.005), and hybrid+logits beats w96 and even w192 at equal updates at ~3x w96 time per update (163 vs 55 ms) and 5x VRAM (3.5 GB). Samples remain non-English; see EXPERIMENTS.md for the full tables and caveats.
+
+## Rungs (addendum)
+Single-seed screens at width 96 / 25,000 updates / natural-v1 (L2 recipe), judged against a 4-seed baseline (SD: CE 0.0012, word_hit 0.004, bpb 0.028; a two-run difference counts as real only above CE 0.0035, word_hit 0.012, bpb 0.08). Full table and caveats in EXPERIMENTS.md ("Rungs").
+- Embedding radius 4 and 6: no change in sample quality (word_hit 0.519 / 0.517 vs baseline 0.518; bpb 4.32 vs 4.33). Val CE is not comparable across radii.
+- Tied output head (logits = z @ E^T with learned temperature): no gain (word_hit 0.519, bpb 4.36), CE t>=750 marginally worse; not worth keeping.
+- Per-word span noise: p=0.3 neutral, p=0.6 worse (bpb +0.12); the t>=750 CE bottleneck (~1.56 nats) is unchanged.
+- Batch 128 / lr 6e-4: at equal examples about equal quality (CE +0.0026, inside noise) at ~2.9x the throughput; with 4x the examples (25,000 updates) it is clearly better (word_hit 0.579, bpb 3.90, CE t>=750 1.526), matching the 4 h bs32 run in about an hour. The gain is examples seen, not a head/noise trick.
+- Recommendation (diffusion only): R8, untied head, no span noise, bs128/lr 6e-4; next long run = hybrid+logits (best at equal updates: word_hit 0.613, bpb 3.73) with bs128, on natural-v2. That combination is untested.
+- Caveats: seed 0 only for all rungs (no rung met the confirmation threshold); the machine ran ~2x slower after the ladder, so only relative ms/update (tied +2.5%, span +1.6%) is meaningful; bs128 lr 6e-4 vs 3e-4 not separated.

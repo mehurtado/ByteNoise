@@ -9,6 +9,8 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 CE_TOL, WH_TOL, BPB_TOL = 0.003, 0.05, 0.1
+QE_SHIFT = 0.0208  # quick_eval draws t/noise per batch, so its CE depends on the batch size: measured on the final checkpoints of rung_bs128 and ladder_w96_s0,
+# the bs128 protocol (8 x 128) reads 0.0211 / 0.0211 lower than the bs32 protocol (32 x 32); mean 0.0208 shift puts both on the bs32 scale
 ORDER = ["bs128", "bs128_25k", "R4", "R6", "tied_R8", "tied_R4", "tied_R6", "span30", "span60"]
 
 
@@ -116,11 +118,11 @@ def main():
           + (" ".join(n for n, rs in rungs.items() if beats(metrics(rs[0]), B)) or "none")]
     if "bs128" in rungs:  # equal-examples val-CE trajectory (quick_eval on the first 1024 val windows; t/noise draws differ between batch sizes)
         L += ["", "## Batch-size rung: EMA val CE (metrics.jsonl, quick_eval) at equal examples seen", "",
-              "| examples | w96 bs32 s0 | w96 bs32 s1 | rung_bs128 |", "|---|---|---|---|"]
+              "| examples | w96 bs32 s0 | w96 bs32 s1 | rung_bs128 (as logged) | rung_bs128 (+0.0208, bs32-protocol) |", "|---|---|---|---|---|"]
         T = [{e: c for e, u, c in traj(f"runs/ladder_w96_s{s}")} for s in (0, 1)]
         T128 = {e: (u, c) for e, u, c in traj("runs/rung_bs128")}
         for e in sorted(T128):
-            L.append(f"| {e:,} | {f(T[0].get(e), 4)} | {f(T[1].get(e), 4)} | {f(T128[e][1], 4)} (upd {T128[e][0]}) |")
+            L.append(f"| {e:,} | {f(T[0].get(e), 4)} | {f(T[1].get(e), 4)} | {f(T128[e][1], 4)} (upd {T128[e][0]}) | {f(T128[e][1] + QE_SHIFT, 4)} |")
         L.append("")
         L.append("Equal updates: bs32 at 6250 updates is not logged (eval_interval 2000); compare rung_bs128 against rung_bs128_25k (25000 updates, 4x the data) if that run exists.")
     txt = "\n".join(L) + "\n"
