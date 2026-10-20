@@ -1,0 +1,128 @@
+{
+ "window": 256,
+ "shingle": 64,
+ "stats": {
+  "tinystories": {
+   "train_bytes": 116978173,
+   "candidate_windows": 390407,
+   "dropped_eval_overlap": 24858,
+   "dropped_prev_source_overlap": 0,
+   "kept_windows": 365549,
+   "shingles_shared_with_eval": 645213,
+   "shingles_shared_with_earlier_sources_sampled": 0,
+   "val_windows": 3928,
+   "test_windows": 3828
+  },
+  "fineweb_edu": {
+   "train_bytes": 58778059,
+   "candidate_windows": 223312,
+   "dropped_eval_overlap": 109,
+   "dropped_prev_source_overlap": 0,
+   "kept_windows": 223203,
+   "shingles_shared_with_eval": 15993,
+   "shingles_shared_with_earlier_sources_sampled": 0,
+   "val_windows": 2234,
+   "test_windows": 2464
+  },
+  "finewiki_en": {
+   "train_bytes": 17954975,
+   "candidate_windows": 68156,
+   "dropped_eval_overlap": 14054,
+   "dropped_prev_source_overlap": 19,
+   "kept_windows": 54083,
+   "shingles_shared_with_eval": 1568463,
+   "shingles_shared_with_earlier_sources_sampled": 57,
+   "val_windows": 588,
+   "test_windows": 871
+  },
+  "gutenberg": {
+   "train_bytes": 160286597,
+   "candidate_windows": 626119,
+   "dropped_eval_overlap": 485,
+   "dropped_prev_source_overlap": 481,
+   "kept_windows": 625153,
+   "shingles_shared_with_eval": 11618,
+   "shingles_shared_with_earlier_sources_sampled": 1364,
+   "val_windows": 8912,
+   "test_windows": 20218
+  }
+ },
+ "sources": [
+  {
+   "name": "tinystories",
+   "dataset": "tinystories-pilot-v1",
+   "weight": 0.4,
+   "ranges": {
+    "train": [
+     0,
+     116978173
+    ],
+    "val": [
+     0,
+     1174584
+    ],
+    "test": [
+     0,
+     1144855
+    ]
+   }
+  },
+  {
+   "name": "fineweb_edu",
+   "dataset": "fineweb-edu-pilot-v1",
+   "weight": 0.35,
+   "ranges": {
+    "train": [
+     116978173,
+     175756232
+    ],
+    "val": [
+     1174584,
+     1764332
+    ],
+    "test": [
+     1144855,
+     1794050
+    ]
+   }
+  },
+  {
+   "name": "finewiki_en",
+   "dataset": "finewiki-en-pilot-v1",
+   "weight": 0.15,
+   "ranges": {
+    "train": [
+     175756232,
+     193711207
+    ],
+    "val": [
+     1764332,
+     1920065
+    ],
+    "test": [
+     1794050,
+     2023575
+    ]
+   }
+  },
+  {
+   "name": "gutenberg",
+   "dataset": "natural-v2",
+   "weight": 0.1,
+   "ranges": {
+    "train": [
+     193711207,
+     353997804
+    ],
+    "val": [
+     1920065,
+     4201606
+    ],
+    "test": [
+     2023575,
+     7199524
+    ]
+   }
+  }
+ ]
+}

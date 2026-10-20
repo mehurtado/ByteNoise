@@ -43,10 +43,57 @@ def sha256_file(path):
 
 def load_split(data_name, split):
     """uint8 tensor for data/<name>/<split>.bin"""
+    if is_mix(data_name):  # virtual mixture: concatenation of the sources' splits in mix.json order
+        mix = json.load(open(os.path.join(DATA_ROOT, data_name, "mix.json")))
+        return torch.cat([load_split(s["dataset"], split) for s in mix["sources"]])
     path = os.path.join(DATA_ROOT, data_name, f"{split}.bin")
     if not os.path.exists(path):
         raise FileNotFoundError(f"{path} missing; run: python data.py prepare {data_name.split('-')[0]}")
     return torch.from_numpy(np.fromfile(path, dtype=np.uint8).copy())
+
+
+def doc_window_starts(data_name, split, length, sep=2):
+    """Start offsets of non-overlapping `length`-byte windows that lie wholly inside one document of `split`
+    (from documents.jsonl; the trailing `sep` separator bytes of each record are excluded). Each document is tiled
+    from its first byte; its tail (< length bytes) is dropped, documents shorter than `length` yield none.
+    Returns (starts int64 array, stats dict)."""
+    starts, ndoc, short, cut = [], 0, 0, 0
+    with open(os.path.join(DATA_ROOT, data_name, "documents.jsonl"), encoding="utf-8") as f:
+        for line in f:
+            r = json.loads(line)
+            if r["split"] != split:
+                continue
+            ndoc += 1
+            n = (r["length"] - sep) // length
+            short += n == 0
+            cut += (r["length"] - sep) - n * length
+            starts.extend(r["offset"] + k * length for k in range(n))
+    return np.array(starts, dtype=np.int64), dict(documents=ndoc, windows=len(starts), docs_without_window=short, tail_bytes_dropped=cut)
+
+
+def is_mix(data_name):
+    return os.path.exists(os.path.join(DATA_ROOT, data_name, "mix.json"))
+
+
+def mix_window_starts(data_name, split, n_slots, seed=0, L=256):
+    """Weighted-source window draw for a mixture dataset built by scripts/build_mix.py: n_slots windows whose source counts
+    match the weights exactly (largest remainder), each source cycling through freshly shuffled passes of its admissible
+    windows (epoch-equivalents = slots / pool), then a final shuffle. Returns (starts, source index per slot, info)."""
+    d = os.path.join(DATA_ROOT, data_name)
+    mix = json.load(open(os.path.join(d, "mix.json"))); z = np.load(os.path.join(d, "windows.npz"))
+    rng = np.random.default_rng(seed)
+    w = np.array([s["weight"] for s in mix["sources"]]); q = np.floor(w * n_slots).astype(int)
+    q[np.argsort(-(w * n_slots - q))[: n_slots - q.sum()]] += 1
+    starts, src, info = [], [], {}
+    for i, s in enumerate(mix["sources"]):
+        pool = z[f"{split}_{s['name']}"]; parts = []
+        while sum(len(p) for p in parts) < q[i]:
+            parts.append(rng.permutation(pool))
+        starts.append(np.concatenate(parts)[: q[i]]); src.append(np.full(q[i], i))
+        info[s["name"]] = dict(windows=int(q[i]), bytes=int(q[i]) * L, pool=len(pool), epochs=float(q[i] / max(len(pool), 1)))
+    starts, src = np.concatenate(starts), np.concatenate(src)
+    p = rng.permutation(len(starts))
+    return starts[p], src[p], info
 
 
 def read_manifest(data_name):

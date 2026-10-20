@@ -102,11 +102,11 @@ def load_or_train(data_name="natural-v1", path=None, verbose=True):
     return m
 
 
-def selftest(model, n_ctx=40, seed=0):
+def selftest(model, n_ctx=40, seed=0, data_name="natural-v1"):
     """Max |sum_w P(w|h) - 1| over random contexts drawn from real text (normalisation check)."""
     sys.path.insert(0, ROOT)
     import data
-    val = data.load_split("natural-v1", "val").numpy()
+    val = data.load_split(data_name, "val").numpy()
     rng = np.random.default_rng(seed)
     worst = 0.0
     for st in rng.integers(0, len(val) - 10, n_ctx):
@@ -118,5 +118,6 @@ def selftest(model, n_ctx=40, seed=0):
 
 
 if __name__ == "__main__":
-    m = load_or_train()
-    print("normalisation max |sum-1| =", selftest(m))
+    name = sys.argv[1] if len(sys.argv) > 1 else "natural-v1"  # dataset whose train split the scorer is trained on
+    m = load_or_train(name)
+    print("normalisation max |sum-1| =", selftest(m, data_name=name))

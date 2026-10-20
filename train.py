@@ -123,16 +123,42 @@ def window_len(cfg):
 class Windows:
     """Non-overlapping fixed-length byte windows over a uint8 tensor; the trailing partial window is dropped."""
 
-    def __init__(self, tokens, length):
+    def __init__(self, tokens, length, starts=None):
+        """starts (optional int64 offsets): use those windows instead of the fixed grid (document-aligned windows)."""
         self.length = length
-        n = tokens.numel() // length
-        self.view = tokens[: n * length].view(n, length)
+        self.tokens = tokens
+        if starts is None:
+            n = tokens.numel() // length
+            self.view = tokens[: n * length].view(n, length)
+            self.starts = None
+        else:
+            self.view = None
+            self.starts = torch.as_tensor(starts, dtype=torch.long)
+            self._ar = torch.arange(length)
 
     def __len__(self):
-        return self.view.size(0)
+        return self.view.size(0) if self.view is not None else self.starts.numel()
 
     def get(self, idx):
-        return self.view[idx].long()
+        if self.view is not None:
+            return self.view[idx].long()
+        idx = torch.as_tensor(idx)
+        return self.tokens[self.starts[idx].unsqueeze(-1) + self._ar].long()
+
+
+import data as data_mod
+MIX_SLOTS = {"train": 512000, "val": 2048, "test": 2048}  # mixture datasets: virtual epoch / eval draw sizes
+
+
+def make_windows(tokens, cfg, split):
+    """Windows over `tokens` of the configured dataset's `split`; document-aligned when cfg.train.doc_aligned."""
+    L = window_len(cfg)
+    if cfg.train.doc_aligned and data_mod.is_mix(cfg.train.data):
+        return Windows(tokens, L, data_mod.mix_window_starts(cfg.train.data, split, MIX_SLOTS[split], seed=cfg.train.seed)[0])
+    if cfg.train.doc_aligned:
+        from data import doc_window_starts
+        return Windows(tokens, L, doc_window_starts(cfg.train.data, split, L)[0])
+    return Windows(tokens, L)
 
 
 def _to_tensor(data):
@@ -155,7 +181,7 @@ def make_data(cfg, data=None, val=None):
         train_tokens, val_tokens = load_split(t.data, "train"), load_split(t.data, "val")
     else:
         train_tokens, val_tokens = torch.tensor(ByteTokenizer().encode(load_text_data(t.data_dir)), dtype=torch.uint8), None
-    windows = Windows(train_tokens, window_len(cfg))
+    windows = make_windows(train_tokens, cfg, "train") if (t.doc_aligned and data is None) else Windows(train_tokens, window_len(cfg))
     if len(windows) < t.batch_size:
         raise ValueError(f"dataset has {len(windows)} windows of {windows.length} bytes, fewer than batch_size {t.batch_size}")
     return windows, val_tokens, tensor_hash(train_tokens)
@@ -173,7 +199,7 @@ def quick_eval(model, cfg, val_tokens, device, n_batches):
     """Deterministic validation: AR -> bits/byte; diffusion -> noise/ce loss with fixed timesteps and noise."""
     was_training = model.training
     model.eval()
-    win = Windows(val_tokens, window_len(cfg))
+    win = make_windows(val_tokens, cfg, "val") if cfg.train.doc_aligned and cfg.train.data else Windows(val_tokens, window_len(cfg))
     bs = cfg.train.batch_size
     n = min(len(win), n_batches * bs)
     out = {}

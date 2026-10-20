@@ -1,0 +1,16 @@
+{
+ "name": "mix-pilot-v1",
+ "kind": "mixture",
+ "note": "see scripts/build_mix.py; Gutenberg = natural-v2 train only",
+ "splits": {
+  "train": {
+   "bytes": 353997804
+  },
+  "val": {
+   "bytes": 4201606
+  },
+  "test": {
+   "bytes": 7199524
+  }
+ }
+}

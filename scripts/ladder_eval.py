@@ -68,7 +68,7 @@ def text_block(samples, words, kn, mem_bytes):
 @torch.no_grad()
 def val_ce(model, cfg, val_tokens, n=2048, bs=32, seed=0):
     """Deterministic CE (nats/byte): same windows, t and noise for every run. Regions: all t, [500,750), [750,1000)."""
-    win = train.Windows(val_tokens, train.window_len(cfg))
+    win = train.make_windows(val_tokens, cfg, "val") if cfg.train.doc_aligned and cfg.train.data else train.Windows(val_tokens, train.window_len(cfg))
     T = cfg.diffusion.num_timesteps
     idx_all = torch.linspace(0, len(win) - 1, n // 2).long().repeat(2)
     res = {}
@@ -131,7 +131,11 @@ def main():
     # controls (independent of the model): real val windows at fixed starts, shuffled letters, shuffled bytes
     val = data.load_split(a.data, "val"); L = cfg.model.seq_len
     g = torch.Generator().manual_seed(0)
-    starts = torch.randint(0, len(val) - L, (a.n,), generator=g)
+    if cfg.train.doc_aligned:  # real controls drawn from document-aligned windows, like the training windows
+        ds = data.doc_window_starts(a.data, "val", L)[0]
+        starts = torch.as_tensor(ds)[torch.randint(0, len(ds), (a.n,), generator=g)]
+    else:
+        starts = torch.randint(0, len(val) - L, (a.n,), generator=g)
     real = [bytes(val[s:s + L].numpy().tobytes()) for s in starts]
     rng = np.random.default_rng(0)
 

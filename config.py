@@ -92,6 +92,7 @@ class TrainConfig:
     eval_interval: int = 0            # updates between validation passes, 0 = off
     eval_batches: int = 32
     data: str = ""                    # prepared dataset dir (data/<name>); empty = legacy data_dir
+    doc_aligned: bool = False         # windows lie wholly inside one document (needs data/<name>/documents.jsonl); off = fixed-grid windows
     task_mix: str = ""                # comma list of controlled tasks, used when data == "tasks"
 
 
