@@ -487,6 +487,81 @@ class HybridDenoiser(nn.Module):
         return self.out(self.final_norm(h))
 
 
+class HierBlock(nn.Module):
+    """Trimmed hybrid block (conv / bidirectional recurrent / rotary attention, no n-gram branch): RMSNorm+FiLM -> branches ->
+    concat -> fuse -> residual; then RMSNorm+FiLM -> GatedFFN -> residual. FiLM starts at zero; fuse and FFN-out use a small init."""
+    def __init__(self, d, rnn_width, heads, rnn_conv, ffn_mult, dropout):
+        super().__init__()
+        self.norm_mix, self.norm_ffn = RMSNorm(d), RMSNorm(d)
+        self.film = nn.Linear(256, 4 * d)
+        self.branches = nn.ModuleList([_DWConvBranch(d), _RNNBranch(d, rnn_width, rnn_conv), _GlobalAttnBranch(d, heads)])
+        self.fuse = nn.Linear(3 * d, d)
+        self.ffn = GatedFFN(d, ffn_mult, dropout)
+        for w in (self.fuse.weight, self.ffn.w_out.weight):
+            nn.init.normal_(w, std=0.02 / math.sqrt(12))
+        nn.init.zeros_(self.fuse.bias); nn.init.zeros_(self.film.weight); nn.init.zeros_(self.film.bias)
+
+    def forward(self, x, t_emb, rope):
+        a, b, c, e = self.film(t_emb)[:, None].chunk(4, dim=-1)
+        z = self.norm_mix(x) * (1 + a) + b
+        x = x + self.fuse(torch.cat([br(z, rope) for br in self.branches], dim=-1))
+        return x + self.ffn(self.norm_ffn(x) * (1 + c) + e)
+
+
+class _Pack(nn.Module):  # adjacent pairs (b, n, d) -> (b, n/2, d_out), order preserved
+    def __init__(self, d_in, d_out):
+        super().__init__()
+        self.norm, self.proj = RMSNorm(2 * d_in), nn.Linear(2 * d_in, d_out)
+
+    def forward(self, x):
+        b, n, d = x.shape
+        return self.proj(self.norm(x.reshape(b, n // 2, 2 * d)))
+
+
+class _Unpack(nn.Module):  # (b, n, d_in) -> (b, 2n, d_out), fused into the skip with a learned per-channel gate (init sigmoid 0.5)
+    def __init__(self, d_in, d_out):
+        super().__init__()
+        self.proj, self.gate = nn.Linear(d_in, 2 * d_out), nn.Parameter(torch.zeros(d_out))
+
+    def forward(self, x, skip):
+        b, n, _ = x.shape
+        return skip + self.gate.sigmoid() * self.proj(x).reshape(b, 2 * n, -1)
+
+
+class HierDenoiser(nn.Module):
+    """Three-resolution trimmed hybrid: fine (n, d) -> medium (n/2, 4d/3) -> coarse (n/4, 2d, two blocks) and back with gated skips.
+    Six blocks. Same interface as UNet1D: (b, n, in_embed), (b,) -> (b, n, out_dim); n must be divisible by 4."""
+    def __init__(self, m: ModelConfig, in_embed_dim, out_dim):
+        super().__init__()
+        d = m.model_dim; d1, d2 = d * 4 // 3, d * 2  # 192 / 256 / 384
+        self.hd = (d // 6, d1 // 8, d2 // 8)  # head dims 32 / 32 / 48
+        blk = lambda w, h: HierBlock(w, w // 2, h, m.rnn_conv, 3.0, m.dropout)
+        self.time_mlp = nn.Sequential(SinusoidalPosEmb(256), nn.Linear(256, 256), nn.GELU(), nn.Linear(256, 256))
+        self.inp = nn.Linear(in_embed_dim, d)
+        self.fine_enc, self.mid_enc = blk(d, 6), blk(d1, 8)
+        self.core = nn.ModuleList([blk(d2, 8) for _ in range(2)])
+        self.mid_dec, self.fine_dec = blk(d1, 8), blk(d, 6)
+        self.down1, self.down2, self.up1, self.up2 = _Pack(d, d1), _Pack(d1, d2), _Unpack(d2, d1), _Unpack(d1, d)
+        self.final_norm = RMSNorm(d)
+        self.out = nn.Linear(d, out_dim)
+
+    def forward(self, x_embed, time):
+        n = x_embed.size(1)
+        if n % 4:
+            raise ValueError("hier denoiser needs a sequence length divisible by four")
+        dev = x_embed.device
+        r0, r1, r2 = (rotary_cache(n // s, h, dev) for s, h in zip((1, 2, 4), self.hd))
+        t = self.time_mlp(time)
+        fine = self.fine_enc(self.inp(x_embed), t, r0)
+        mid = self.mid_enc(self.down1(fine), t, r1)
+        z = self.down2(mid)
+        for blk in self.core:
+            z = blk(z, t, r2)
+        z = self.mid_dec(self.up1(z, mid), t, r1)
+        z = self.fine_dec(self.up2(z, fine), t, r0)
+        return self.out(self.final_norm(z))
+
+
 # --- Gaussian Diffusion Process ---
 T_BINS = 50          # time-warp bins
 WARP_EMA = 0.05      # per-observation EMA rate of the per-bin loss
@@ -918,6 +993,8 @@ class ByteDiffusionLM(nn.Module):
                                               m.dropout, out_dim=out_dim)
         elif m.denoiser == "hybrid":
             self.denoise_unet = HybridDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + in_extra, out_dim)
+        elif m.denoiser == "hier":
+            self.denoise_unet = HierDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + in_extra, out_dim)
         else:
             self.denoise_unet = UNet1D(
                 model_dim=m.model_dim,

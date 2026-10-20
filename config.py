@@ -15,7 +15,7 @@ class ModelConfig:
     attn_heads: int = 6
     dropout: float = 0.1
     seq_len: int = 256
-    denoiser: str = "unet"           # "unet" | "birnn" | "hybrid"
+    denoiser: str = "unet"           # "unet" | "birnn" | "hybrid" | "hier" (hier: 3-resolution trimmed hybrid; widths from model_dim: d, 4d/3, 2d; needs model_dim % 96 == 0, seq_len % 4 == 0)
     rnn_layers: int = 8               # birnn only: block count (width = model_dim)
     rnn_conv: int = 7                 # birnn only: centered depthwise conv width (odd)
     rnn_ffn_mult: float = 2.667       # birnn only
@@ -129,8 +129,10 @@ class Config:
             hyb = [k for k in mod if k.startswith("hybrid_")]
             if self.model.denoiser == "unet":  # birnn/hybrid-only fields don't exist for U-Net configs; keeps old hashes
                 mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult", *hyb)}
-            elif self.model.denoiser == "birnn":  # keeps birnn hashes from before the hybrid fields existed
+            elif self.model.denoiser in ("birnn", "hier"):  # keeps birnn hashes from before the hybrid fields existed; hier ignores hybrid_* too
                 mod = {k: v for k, v in mod.items() if k not in hyb}
+                if self.model.denoiser == "hier":
+                    mod = {k: v for k, v in mod.items() if k not in ("rnn_layers", "rnn_ffn_mult")}
             else:  # hybrid reuses rnn_conv only
                 mod = {k: v for k, v in mod.items() if k not in ("rnn_layers", "rnn_ffn_mult")}
             parts = {"model": mod, "diffusion": diff}
@@ -153,6 +155,10 @@ PRESETS = {
     "hybrid": Config(
         name="hybrid",
         model=ModelConfig(byte_embed_dim=64, model_dim=256, seq_len=256, denoiser="hybrid", hybrid_layers=7),
+    ),
+    "hier": Config(
+        name="hier",
+        model=ModelConfig(byte_embed_dim=64, model_dim=192, seq_len=256, denoiser="hier"),
     ),
     "debug": Config(
         name="debug",
@@ -219,8 +225,8 @@ def validate(cfg):
             errors.append("head dim must be even for rotary embeddings")
         if lm.loops < 1 or lm.n_layers < 1:
             errors.append("loops and n_layers must be >= 1")
-    if d.self_cond and m.denoiser not in ("unet", "hybrid"):
-        errors.append("diffusion.self_cond is only supported for the unet and hybrid denoisers")
+    if d.self_cond and m.denoiser not in ("unet", "hybrid", "hier"):
+        errors.append("diffusion.self_cond is only supported for the unet, hybrid and hier denoisers")
     if d.ce_schedule not in ("const", "alpha_bar"):
         errors.append(f"unknown ce_schedule {d.ce_schedule!r}")
     if d.param not in ("eps", "logits"):
@@ -243,7 +249,7 @@ def validate(cfg):
         if errors:
             raise ValueError("invalid config:\n  - " + "\n  - ".join(errors))
         return cfg
-    if m.denoiser not in ("unet", "birnn", "hybrid"):
+    if m.denoiser not in ("unet", "birnn", "hybrid", "hier"):
         errors.append(f"unknown denoiser {m.denoiser!r}")
     if m.denoiser == "hybrid":
         br = [b for b in m.hybrid_branches.split(",") if b]
@@ -255,7 +261,10 @@ def validate(cfg):
             errors.append("hybrid model_dim must be even and hybrid_rnn_width >= 1")
         if m.hybrid_ngram_kernel % 2 == 0 or m.rnn_conv % 2 == 0:
             errors.append("hybrid_ngram_kernel and rnn_conv must be odd")
-    if m.denoiser in ("birnn", "hybrid"):
+    if m.denoiser == "hier":
+        if m.model_dim % 96 != 0 or m.seq_len % 4 != 0 or m.rnn_conv % 2 == 0:
+            errors.append("hier needs model_dim divisible by 96, seq_len divisible by 4 and an odd rnn_conv")
+    if m.denoiser in ("birnn", "hybrid", "hier"):
         if m.denoiser == "birnn":
             if m.rnn_layers < 1 or m.rnn_conv < 1 or m.rnn_conv % 2 == 0:
                 errors.append("birnn needs rnn_layers >= 1 and an odd rnn_conv")
