@@ -281,6 +281,8 @@ def load_checkpoint_into(ckpt, model, ema=None):
 _CORE_KEY = re.compile(r"denoise_(?:unet|model)\.(?:core|fine_enc_x|fine_dec_x)\.\d+\.(.+)$")
 _PAR_KEY = re.compile(r"denoise_(?:unet|model)\.par\.")
 IDENTITY_ZERO = ("fuse.weight", "fuse.bias", "ffn.w_out.weight")
+_RPW_NEW = re.compile(r"denoise_(?:unet|model)\.enc\.1\.(?:na|acond|attn)\.")  # rpw encoder-attention swap: fresh (zero-output) attention, its norm and conditioner
+_RPW_TRIM = re.compile(r"denoise_(?:unet|model)\.enc\.1\.convs\.[23]\.")
 
 
 def expand_state_dict(src, target):
@@ -289,8 +291,15 @@ def expand_state_dict(src, target):
     x0_prev the new model computes exactly the old function. Keys of extra hier coarse-core blocks (absent from `src`) keep their init
     with IDENTITY_ZERO tensors zeroed. Any other mismatch is an error."""
     out = {}
+    if any(_RPW_NEW.search(k) for k in target):  # trim enc.1 conv bank to dilations 1,2: drop convs 2,3 and the matching fusion columns
+        src = {k: v for k, v in src.items() if not _RPW_TRIM.search(k)}
+        for mk in [k for k in target if k.endswith("enc.1.mix.weight")]:  # the state dict lists every parameter under both alias prefixes
+            if src[mk].shape[1] > target[mk].shape[1]:
+                src[mk] = src[mk][:, : target[mk].shape[1]]
     for k, v in target.items():
         if k not in src:
+            if _RPW_NEW.search(k):
+                out[k] = v.detach().clone(); continue
             m = _CORE_KEY.search(k)
             if m is None and _PAR_KEY.search(k):  # parallel coarse branch: fresh init; its gate is zero by construction
                 out[k] = v.detach().clone(); continue
