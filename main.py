@@ -592,6 +592,122 @@ class HierDenoiser(nn.Module):
         return self.out(self.final_norm(z))
 
 
+def _rope_fp32(pos, head_dim):
+    """cos/sin tables for arbitrary float coordinates `pos` (n,), always computed in fp32."""
+    inv = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2, device=pos.device).float() / head_dim))
+    with torch.autocast(pos.device.type, enabled=False):
+        ang = torch.outer(pos.float(), inv)
+    return ang.cos(), ang.sin()
+
+
+class _RPWAttn(nn.Module):
+    """Bias-free multi-head attention, head dim 32, rotary on queries and keys at the given float coordinates."""
+    def __init__(self, dq, dkv, heads, out_std):
+        super().__init__()
+        self.h, inner = heads, heads * 32
+        self.q, self.k, self.v = nn.Linear(dq, inner, bias=False), nn.Linear(dkv, inner, bias=False), nn.Linear(dkv, inner, bias=False)
+        self.o = nn.Linear(inner, dq, bias=False)
+        nn.init.normal_(self.o.weight, std=out_std)
+
+    def forward(self, xq, xkv, rq, rk):
+        b, nq, _ = xq.shape; nk = xkv.size(1)
+        q = self.q(xq).view(b, nq, self.h, 32).transpose(1, 2)
+        k = self.k(xkv).view(b, nk, self.h, 32).transpose(1, 2)
+        v = self.v(xkv).view(b, nk, self.h, 32).transpose(1, 2)
+        y = F.scaled_dot_product_attention(apply_rotary(q, *rq), apply_rotary(k, *rk), v)
+        return self.o(y.transpose(1, 2).reshape(b, nq, -1))
+
+
+def _film(x, norm, scale, shift):
+    return norm(x) * (1 + scale) + shift
+
+
+class _RPWLocalBlock(nn.Module):
+    """RMSNorm+FiLM -> four parallel depthwise convs (k=3, dilations 1,2,4,8, SiLU) -> concat -> project -> residual; RMSNorm+FiLM -> gated FFN -> residual."""
+    def __init__(self, d, out_std):
+        super().__init__()
+        self.n1, self.n2 = RMSNorm(d), RMSNorm(d)
+        self.convs = nn.ModuleList([nn.Conv1d(d, d, 3, padding=r, dilation=r, groups=d, bias=False) for r in (1, 2, 4, 8)])
+        self.mix = nn.Linear(4 * d, d, bias=False)
+        self.ffn = GatedFFN(d, 2.0, 0.0)
+        for w in (self.mix.weight, self.ffn.w_out.weight):
+            nn.init.normal_(w, std=out_std)
+
+    def forward(self, x, c):
+        s1, b1, s2, b2 = c
+        z = _film(x, self.n1, s1, b1).transpose(1, 2)
+        x = x + self.mix(torch.cat([F.silu(cv(z)) for cv in self.convs], dim=1).transpose(1, 2))
+        return x + self.ffn(_film(x, self.n2, s2, b2))
+
+
+class _RPWWorkBlock(nn.Module):
+    """Workspace block: RMSNorm+FiLM -> rotary self-attention (width/32 heads) -> residual; RMSNorm+FiLM -> gated FFN (inner 2x width) -> residual."""
+    def __init__(self, d, out_std):
+        super().__init__()
+        self.n1, self.n2 = RMSNorm(d), RMSNorm(d)
+        self.attn = _RPWAttn(d, d, d // 32, out_std)
+        self.ffn = GatedFFN(d, 2.0, 0.0)
+        nn.init.normal_(self.ffn.w_out.weight, std=out_std)
+
+    def forward(self, z, c, rope):
+        s1, b1, s2, b2 = c
+        h = _film(z, self.n1, s1, b1)
+        z = z + self.attn(h, h, rope, rope)
+        return z + self.ffn(_film(z, self.n2, s2, b2))
+
+
+class RPWDenoiser(nn.Module):
+    """Read-process-write byte denoiser: 2 local blocks at byte resolution, read cross-attention into packed (4-byte) summaries, 4 workspace
+    blocks over the summaries, write cross-attention back into the bytes, 2 local blocks, RMSNorm, byte logits. Same interface as UNet1D.
+    The byte embedding table lives in the outer ByteDiffusionLM, not here."""
+    def __init__(self, m: ModelConfig, in_embed_dim, out_dim, local_blocks=2, work_blocks=4):
+        super().__init__()
+        d, w = m.model_dim, m.rpw_workspace_dim
+        std = 0.02 / math.sqrt(2 * (2 * local_blocks + work_blocks))
+        self.time_mlp = nn.Sequential(SinusoidalPosEmb(256), nn.Linear(256, 256, bias=False), nn.SiLU(), nn.Linear(256, 256, bias=False))
+        self.byte_cond, self.work_cond = nn.Linear(256, 4 * d), nn.Linear(256, 4 * w)  # two (scale, shift) pairs, shared by every block of the group
+        for lin in (self.byte_cond, self.work_cond):
+            nn.init.zeros_(lin.weight); nn.init.zeros_(lin.bias)
+        self.inp = nn.Linear(in_embed_dim, d, bias=False)
+        self.enc = nn.ModuleList([_RPWLocalBlock(d, std) for _ in range(local_blocks)])
+        self.pack_norm, self.pack = RMSNorm(4 * d), nn.Linear(4 * d, w, bias=False)
+        self.read_nq, self.read_nk, self.read = RMSNorm(w), RMSNorm(d), _RPWAttn(w, d, w // 32, std)
+        self.work = nn.ModuleList([_RPWWorkBlock(w, std) for _ in range(work_blocks)])
+        self.write_nq, self.write_nk, self.write = RMSNorm(d), RMSNorm(w), _RPWAttn(d, w, d // 32, std)
+        self.dec = nn.ModuleList([_RPWLocalBlock(d, std) for _ in range(local_blocks)])
+        self.final_norm, self.out = RMSNorm(d), nn.Linear(d, out_dim, bias=False)
+        self.skip_write = False  # test hook only: drop the write-back
+
+    def group_counts(self):
+        n = lambda *mods: sum(p.numel() for mod in mods for p in mod.parameters())
+        return {"input projection": n(self.inp), "time MLP": n(self.time_mlp), "byte conditioner": n(self.byte_cond), "workspace conditioner": n(self.work_cond),
+                "local blocks": n(self.enc, self.dec), "pack norm+projection": n(self.pack_norm, self.pack), "read attention+norms": n(self.read_nq, self.read_nk, self.read),
+                "workspace blocks": n(self.work), "write attention+norms": n(self.write_nq, self.write_nk, self.write), "final norm+output": n(self.final_norm, self.out)}
+
+    def forward(self, x_embed, time):
+        b, n, _ = x_embed.shape
+        if n % 4:
+            raise ValueError("rpw denoiser needs a sequence length divisible by four")
+        dev = x_embed.device
+        t = self.time_mlp(time)
+        cb = [c[:, None] for c in self.byte_cond(t).chunk(4, dim=-1)]
+        cw = [c[:, None] for c in self.work_cond(t).chunk(4, dim=-1)]
+        rb = _rope_fp32(torch.arange(n, device=dev), 32)                    # byte i at coordinate i
+        rs = _rope_fp32(4 * torch.arange(n // 4, device=dev) + 1.5, 32)     # summary j covers bytes 4j..4j+3: centre 4j+1.5
+        x = self.inp(x_embed)
+        for blk in self.enc:
+            x = blk(x, cb)
+        z = self.pack(self.pack_norm(x.reshape(b, n // 4, -1)))
+        z = z + self.read(self.read_nq(z), self.read_nk(x), rs, rb)
+        for blk in self.work:
+            z = blk(z, cw, rs)
+        if not self.skip_write:
+            x = x + self.write(self.write_nq(x), self.write_nk(z), rb, rs)
+        for blk in self.dec:
+            x = blk(x, cb)
+        return self.out(self.final_norm(x))
+
+
 # --- Gaussian Diffusion Process ---
 T_BINS = 50          # time-warp bins
 WARP_EMA = 0.05      # per-observation EMA rate of the per-bin loss
@@ -1023,6 +1139,8 @@ class ByteDiffusionLM(nn.Module):
                                               m.dropout, out_dim=out_dim)
         elif m.denoiser == "hybrid":
             self.denoise_unet = HybridDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + in_extra, out_dim)
+        elif m.denoiser == "rpw":
+            self.denoise_unet = RPWDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + in_extra, out_dim)
         elif m.denoiser == "hier":
             self.denoise_unet = HierDenoiser(m, m.byte_embed_dim * (1 + int(d.self_cond)) + in_extra, out_dim)
         else:

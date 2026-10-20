@@ -648,6 +648,7 @@ def main(argv=None):
     tr.add_argument("--precision", choices=["fp32", "bf16", "fp16"])
     tr.add_argument("--set", nargs="*", default=[], metavar="train.key=value", help="override other TrainConfig fields")
     tr.add_argument("--init-from", metavar="CKPT", help="fresh run only: initialise weights (and EMA) from a checkpoint, zero-padding the self-cond input channels")
+    tr.add_argument("--stop-after", type=int, metavar="UPDATES", help="pause (checkpoint + status.json) once this many total updates are done; the schedule is unchanged, so --resume continues it")
     tr.add_argument("--device", default="auto")
 
     ge = sub.add_parser("generate", help="sample from a checkpoint")
@@ -667,7 +668,7 @@ def main(argv=None):
             if args.resume:
                 if any(v is not None for v in (args.max_updates, args.max_seconds, args.seed, args.data, args.precision)) or args.set:
                     p.error("--resume uses the run's stored config; do not pass overrides")
-                run_training(None, args.resume, "resume", args.device)
+                run_training(None, args.resume, "resume", args.device, stop_after=args.stop_after)
             else:
                 cfg = get_preset(args.preset)
                 ov = {k: v for k, v in (("max_updates", args.max_updates), ("max_seconds", args.max_seconds), ("seed", args.seed),
@@ -676,7 +677,7 @@ def main(argv=None):
                 ov.update(tov)
                 cfg = validate(override(cfg, **ov))
                 run_dir = args.run_dir or os.path.join("runs", f"{cfg.name}-{datetime.now():%Y%m%d_%H%M%S}")
-                run_training(cfg, run_dir, "fresh", args.device, init_from=args.init_from)
+                run_training(cfg, run_dir, "fresh", args.device, init_from=args.init_from, stop_after=args.stop_after)
         elif args.cmd == "eval":
             import eval as E
             E.main(args.rest)

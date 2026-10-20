@@ -31,6 +31,7 @@ class ModelConfig:
     hier_fine_blocks: int = 0         # hier only: extra full-resolution encoder AND decoder blocks (each side); 0 = original (excluded from hash when 0 or not hier)
     hybrid_par_coarse: int = 0        # hybrid only: 1 = parallel coarse branch (pack 4 -> width 384 -> one trimmed hybrid block -> unpack, zero-init gate) after block `hybrid_par_after`; 0 = off (excluded from hash)
     hybrid_par_after: int = 3         # number of flat blocks before the branch splits off (only used when hybrid_par_coarse=1)
+    rpw_workspace_dim: int = 192      # rpw only: workspace width (byte width = model_dim; both multiples of 32, seq_len % 4 == 0); excluded from hash for other denoisers
     tied_head: bool = False           # logits only: logits = exp(log_scale) * z @ E^T (z = byte_embed_dim projection of the final features) instead of a separate 256-way layer; False = off (excluded from hash)
 
     @property
@@ -129,12 +130,14 @@ class Config:
         full = self.to_dict()
         if self.arch == "diffusion":
             diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v) and not (k == "ce_schedule" and v == "const") and not (k == "param" and v == "eps") and not (k == "t_sampling" and v == "uniform") and not (k == "x0_mse_weight" and v == 0.0) and not (k == "span_noise_prob" and v == 0.0)}  # sampler-only / default-off; keeps old hashes
-            mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0) and not (k == "tied_head" and not v) and not (k == "hier_core_blocks" and (v == 2 or self.model.denoiser != "hier")) and not (k == "hier_fine_blocks" and (v == 0 or self.model.denoiser != "hier")) and not (k in ("hybrid_par_coarse", "hybrid_par_after") and not self.model.hybrid_par_coarse)}
+            mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0) and not (k == "tied_head" and not v) and not (k == "hier_core_blocks" and (v == 2 or self.model.denoiser != "hier")) and not (k == "hier_fine_blocks" and (v == 0 or self.model.denoiser != "hier")) and not (k in ("hybrid_par_coarse", "hybrid_par_after") and not self.model.hybrid_par_coarse) and not (k == "rpw_workspace_dim" and self.model.denoiser != "rpw")}
             hyb = [k for k in mod if k.startswith("hybrid_")]
             if self.model.denoiser == "unet":  # birnn/hybrid-only fields don't exist for U-Net configs; keeps old hashes
                 mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult", *hyb)}
-            elif self.model.denoiser in ("birnn", "hier"):  # keeps birnn hashes from before the hybrid fields existed; hier ignores hybrid_* too
+            elif self.model.denoiser in ("birnn", "hier", "rpw"):  # keeps birnn hashes from before the hybrid fields existed; hier/rpw ignore hybrid_* too
                 mod = {k: v for k, v in mod.items() if k not in hyb}
+                if self.model.denoiser == "rpw":
+                    mod = {k: v for k, v in mod.items() if k not in ("rnn_layers", "rnn_conv", "rnn_ffn_mult", "dim_mults", "hier_core_blocks", "hier_fine_blocks")}
                 if self.model.denoiser == "hier":
                     mod = {k: v for k, v in mod.items() if k not in ("rnn_layers", "rnn_ffn_mult")}
             else:  # hybrid reuses rnn_conv only
@@ -163,6 +166,10 @@ PRESETS = {
     "hier": Config(
         name="hier",
         model=ModelConfig(byte_embed_dim=64, model_dim=192, seq_len=256, denoiser="hier"),
+    ),
+    "rpw": Config(
+        name="rpw",
+        model=ModelConfig(byte_embed_dim=64, model_dim=128, seq_len=256, denoiser="rpw", dropout=0.0, embed_norm=8.0),
     ),
     "debug": Config(
         name="debug",
@@ -229,8 +236,8 @@ def validate(cfg):
             errors.append("head dim must be even for rotary embeddings")
         if lm.loops < 1 or lm.n_layers < 1:
             errors.append("loops and n_layers must be >= 1")
-    if d.self_cond and m.denoiser not in ("unet", "hybrid", "hier"):
-        errors.append("diffusion.self_cond is only supported for the unet, hybrid and hier denoisers")
+    if d.self_cond and m.denoiser not in ("unet", "hybrid", "hier", "rpw"):
+        errors.append("diffusion.self_cond is only supported for the unet, hybrid, hier and rpw denoisers")
     if d.ce_schedule not in ("const", "alpha_bar"):
         errors.append(f"unknown ce_schedule {d.ce_schedule!r}")
     if d.param not in ("eps", "logits"):
@@ -253,7 +260,7 @@ def validate(cfg):
         if errors:
             raise ValueError("invalid config:\n  - " + "\n  - ".join(errors))
         return cfg
-    if m.denoiser not in ("unet", "birnn", "hybrid", "hier"):
+    if m.denoiser not in ("unet", "birnn", "hybrid", "hier", "rpw"):
         errors.append(f"unknown denoiser {m.denoiser!r}")
     if m.denoiser == "hybrid":
         br = [b for b in m.hybrid_branches.split(",") if b]
@@ -272,7 +279,10 @@ def validate(cfg):
             errors.append("hier_fine_blocks must be >= 0")
         if m.model_dim % 96 != 0 or m.seq_len % 4 != 0 or m.rnn_conv % 2 == 0:
             errors.append("hier needs model_dim divisible by 96, seq_len divisible by 4 and an odd rnn_conv")
-    if m.denoiser in ("birnn", "hybrid", "hier"):
+    if m.denoiser == "rpw":
+        if m.model_dim % 32 or m.rpw_workspace_dim % 32 or m.seq_len % 4:
+            errors.append("rpw needs model_dim and rpw_workspace_dim divisible by 32 (head dim 32) and seq_len divisible by four")
+    if m.denoiser in ("birnn", "hybrid", "hier", "rpw"):
         if m.denoiser == "birnn":
             if m.rnn_layers < 1 or m.rnn_conv < 1 or m.rnn_conv % 2 == 0:
                 errors.append("birnn needs rnn_layers >= 1 and an odd rnn_conv")
