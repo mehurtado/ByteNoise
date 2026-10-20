@@ -1,5 +1,10 @@
 # Progress / handoff (read this first when resuming)
 
+## Personal writing for the NEXT long run (2026-10-19)
+
+User supplied `afarewell.txt` (A Farewell, 262 bytes) and `Speculative Fiction.txt` (A Stained Mind, 9,191 bytes). Original copies and provenance are staged under ignored `data/raw/personal-writing/`; read TRAINING_NOTES.md there before use. Keep current mixture pilot unchanged. User wants only a small influence. Earlier 1% suggestion predates measuring how tiny these works are; recommend initially <=0.1% aggregate share, taken from Gutenberg, with bounded/reported repetitions, not equal weighting between documents. Preserve document boundaries and monitor verbatim copying. Do not commit personal source text or change Discord automatically.
+
+
 ## Latest user direction - 2026-10-16 (takes precedence over the older plan below)
 
 Keep ByteNoise a byte-level DIFFUSION model. The user explicitly corrected the earlier drift into an autoregressive-model project. Existing Transformer/causal recurrent experiments may be useful background, but they are not the requested final architecture.
@@ -39,3 +44,9 @@ Diffusion track closed out: logit head + warp + 4 h run reached word-hit 0.587 (
 3. Recurrent model on natural text at matching params/time; then loop variants (loops=1,2,4; separate blocks at matching depth; wider shared).
 4. Bounded diffusion check (compact ByteNoise; known issue: CE term spikes at high noise, clip/embedding scale mismatch).
 5. >=3-seed confirmation for finalists, equal-time + equal-data tables, final report recommending a model (EXPERIMENTS.md), README update, commit.
+
+## Hierarchy / depth / RPW experiments (2026-10-20, latest - supersedes older "next" lists)
+- Hierarchy six-hour clean-mixture run finished (37,172 updates): stable, improving, but NOT better than the flat warm-start / `mix_clean_s0` (word-hit 0.65 vs 0.71-0.74, bpb 3.5 vs 2.9). Not promoted to Discord. Report: `runs/hier_mix_6h_s0/REPORT.md` (ignored dir; local only).
+- Short probes, all failed the cost/benefit bar: coarse expansion to 4 blocks (+31% time, no gain); +2 full-resolution blocks (`hier_fine_blocks`, +28% time, tie); flat + parallel coarse branch (`hybrid_par_coarse`, +3% time, 1 h on mix-clean-v1: CE gain from mixture adaptation, word-hit slightly lower, inconclusive for the branch).
+- RPW-v1 (`denoiser="rpw"`, 2,968,576 params, 348 ms/update, 0.71 GB, fp32 faster than bf16): 1 h from scratch on mix-clean-v1 (`runs/rpw_s0`, step-based schedule, paused/resumed at 10 min via `--stop-after`). Stable; word-hit 0.48-0.54, valid UTF-8 0.94, still non-word babble. Workspace-off ablation: CE +0.17 on FineWiki, ~0 elsewhere; samples not better with the workspace. Bridge routing diagnostic (`scripts/rpw_attn_diag.py`): mix of local and global heads, no collapse. Open: one bounded local-path capacity probe (3 local blocks/side or width 192) - needs user go-ahead.
+- Pending: finish/commit clean-retry write-up (`mix-clean-v1` files, `mix_eval.py` flags), push of main to origin (not requested), stale `HYBRID_DENOISER_PLAN.md`.
