@@ -158,8 +158,9 @@ def main():
         if R["mem32"] > 0.02: why = f"memorization32 {R['mem32']:.3f} > 0.02"
         if R["space_run8"] > 0.015: why = f"space-run {R['space_run8']:.3f} > 1.5%"
         if R["junk"] > 2: why = f"table junk {R['junk']}/64 > 2"
-        if len(H) >= 4 and all(H[-k]["repeated_8gram"] > H[-k - 1]["repeated_8gram"] for k in (1, 2, 3)) and H[-1]["repeated_8gram"] > 3 * H[0]["repeated_8gram"] and H[0]["repeated_8gram"] > 0:
-            why = "repeated_8gram rose 3 consecutive snapshots to >3x first value"
+        if len(H) >= 4 and all(H[-k]["repeated_8gram"] > H[-k - 1]["repeated_8gram"] for k in (1, 2, 3)) and H[-1]["repeated_8gram"] > 3 * H[0]["repeated_8gram"] and H[0]["repeated_8gram"] > 0 \
+                and H[-1]["repeated_8gram"] > 0.01:  # absolute floor: 0.0046 fired the ratio on noise (flat mix_clean_s0 sits at 0.004-0.012)
+            why = "repeated_8gram rose 3 consecutive snapshots to >3x first value and above 0.01"
         h1 = next((h for h in H if h["target"] == 3600), None)
         late = [h for h in H if h["target"] > 3600]
         if h1 and len(late) >= 3 and all(h["valid_utf8"] < h1["valid_utf8"] for h in late[-3:]): why = "valid_utf8 below first-hour value for 3 consecutive snapshots"
