@@ -78,18 +78,26 @@ def is_mix(data_name):
 def mix_window_starts(data_name, split, n_slots, seed=0, L=256):
     """Weighted-source window draw for a mixture dataset built by scripts/build_mix.py: n_slots windows whose source counts
     match the weights exactly (largest remainder), each source cycling through freshly shuffled passes of its admissible
-    windows (epoch-equivalents = slots / pool), then a final shuffle. Returns (starts, source index per slot, info)."""
+    windows (epoch-equivalents = slots / pool), then a final shuffle. Returns (starts, source index per slot, info).
+    Optional mix.json fields: "slots": {split: n} overrides n_slots; a source with "extra": true (weight 0, train only) contributes
+    exactly len(pool) * passes_over_pool slots (default 1 pass over its pool), carved out of the quota of source "carve_from"."""
     d = os.path.join(DATA_ROOT, data_name)
     mix = json.load(open(os.path.join(d, "mix.json"))); z = np.load(os.path.join(d, "windows.npz"))
+    n_slots = int(mix.get("slots", {}).get(split, n_slots))
     rng = np.random.default_rng(seed)
+    names = [s["name"] for s in mix["sources"]]
     w = np.array([s["weight"] for s in mix["sources"]]); q = np.floor(w * n_slots).astype(int)
     q[np.argsort(-(w * n_slots - q))[: n_slots - q.sum()]] += 1
+    for i, s in enumerate(mix["sources"]):
+        if s.get("extra"):
+            q[i] = len(z[f"{split}_{s['name']}"]) * int(s.get("passes_over_pool", 1)) if split == "train" else 0
+            q[names.index(s["carve_from"])] -= q[i]
     starts, src, info = [], [], {}
     for i, s in enumerate(mix["sources"]):
         pool = z[f"{split}_{s['name']}"]; parts = []
         while sum(len(p) for p in parts) < q[i]:
             parts.append(rng.permutation(pool))
-        starts.append(np.concatenate(parts)[: q[i]]); src.append(np.full(q[i], i))
+        starts.append(np.concatenate(parts)[: q[i]] if parts else np.zeros(0, np.int64)); src.append(np.full(q[i], i))
         info[s["name"]] = dict(windows=int(q[i]), bytes=int(q[i]) * L, pool=len(pool), epochs=float(q[i] / max(len(pool), 1)))
     starts, src = np.concatenate(starts), np.concatenate(src)
     p = rng.permutation(len(starts))

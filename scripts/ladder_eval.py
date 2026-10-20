@@ -66,9 +66,9 @@ def text_block(samples, words, kn, mem_bytes):
 
 
 @torch.no_grad()
-def val_ce(model, cfg, val_tokens, n=2048, bs=32, seed=0):
+def val_ce(model, cfg, val_tokens, n=2048, bs=32, seed=0, data_name=None):
     """Deterministic CE (nats/byte): same windows, t and noise for every run. Regions: all t, [500,750), [750,1000)."""
-    win = train.make_windows(val_tokens, cfg, "val") if cfg.train.doc_aligned and cfg.train.data else train.Windows(val_tokens, train.window_len(cfg))
+    win = train.make_windows(val_tokens, cfg, "val") if cfg.train.doc_aligned and cfg.train.data and data_name in (None, cfg.train.data) else train.Windows(val_tokens, train.window_len(cfg))
     T = cfg.diffusion.num_timesteps
     idx_all = torch.linspace(0, len(win) - 1, n // 2).long().repeat(2)
     res = {}
@@ -131,7 +131,7 @@ def main():
     # controls (independent of the model): real val windows at fixed starts, shuffled letters, shuffled bytes
     val = data.load_split(a.data, "val"); L = cfg.model.seq_len
     g = torch.Generator().manual_seed(0)
-    if cfg.train.doc_aligned:  # real controls drawn from document-aligned windows, like the training windows
+    if cfg.train.doc_aligned and os.path.exists(os.path.join(data.DATA_ROOT, a.data, "documents.jsonl")):  # real controls drawn from document-aligned windows, like the training windows
         ds = data.doc_window_starts(a.data, "val", L)[0]
         starts = torch.as_tensor(ds)[torch.randint(0, len(ds), (a.n,), generator=g)]
     else:
@@ -163,7 +163,7 @@ def main():
         print(f"[{a.run}] s={s} wh={blk['word_hit']:.3f} {blk['word_hit_ci']} bpb={blk['ngram_bpb']:.3f} utf8={blk['valid_utf8']:.3f} "
               f"d4={blk['distinct_4gram']:.3f} {sps:.3f}s/sample", flush=True)
     if logits_mode:
-        R["val_ce"] = val_ce(model, cfg, data.load_split(a.data, "val"))
+        R["val_ce"] = val_ce(model, cfg, data.load_split(a.data, "val"), data_name=a.data)
         print(f"[{a.run}] val_ce {R['val_ce']}", flush=True)
     else:
         R["val_ce"] = None

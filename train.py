@@ -435,6 +435,8 @@ def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None,
         if val_tokens is None:
             return None
         row = {"eval": True, "update": progress["updates"], "examples": progress["examples"], "elapsed": progress["elapsed"]}
+        if cuda:
+            row["peak_alloc_mb"] = torch.cuda.max_memory_allocated() / 2**20; row["peak_reserved_mb"] = torch.cuda.max_memory_reserved() / 2**20
         for which, m in (("", model), ("ema_", ema.model)):
             with torch.autocast(ac_dev, dtype=ac_dtype, enabled=bool(ac_dev)) if ac_dev else torch.autocast("cpu", enabled=False):
                 for k, v in quick_eval(m, cfg, val_tokens, device, t.eval_batches).items():
@@ -535,6 +537,8 @@ def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None,
                 return finish("stop_after")
             if t.max_seconds and progress["elapsed"] >= t.max_seconds:
                 return finish("max_seconds")
+            if os.path.exists(os.path.join(run_dir, "STOP")):  # supervisor request (scripts/long_monitor.py): stop cleanly with a checkpoint
+                return finish("stop_file")
             if progress["updates"] % t.save_interval == 0:
                 save()
 
