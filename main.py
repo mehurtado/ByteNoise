@@ -529,8 +529,8 @@ class _Unpack(nn.Module):  # (b, n, d_in) -> (b, 2n, d_out), fused into the skip
 
 
 class HierDenoiser(nn.Module):
-    """Three-resolution trimmed hybrid: fine (n, d) -> medium (n/2, 4d/3) -> coarse (n/4, 2d, two blocks) and back with gated skips.
-    Six blocks. Same interface as UNet1D: (b, n, in_embed), (b,) -> (b, n, out_dim); n must be divisible by 4."""
+    """Three-resolution trimmed hybrid: fine (n, d) -> medium (n/2, 4d/3) -> coarse (n/4, 2d, hier_core_blocks blocks, default two) and back with gated skips.
+    Six blocks by default. Same interface as UNet1D: (b, n, in_embed), (b,) -> (b, n, out_dim); n must be divisible by 4."""
     def __init__(self, m: ModelConfig, in_embed_dim, out_dim):
         super().__init__()
         d = m.model_dim; d1, d2 = d * 4 // 3, d * 2  # 192 / 256 / 384
@@ -539,7 +539,7 @@ class HierDenoiser(nn.Module):
         self.time_mlp = nn.Sequential(SinusoidalPosEmb(256), nn.Linear(256, 256), nn.GELU(), nn.Linear(256, 256))
         self.inp = nn.Linear(in_embed_dim, d)
         self.fine_enc, self.mid_enc = blk(d, 6), blk(d1, 8)
-        self.core = nn.ModuleList([blk(d2, 8) for _ in range(2)])
+        self.core = nn.ModuleList([blk(d2, 8) for _ in range(m.hier_core_blocks)])
         self.mid_dec, self.fine_dec = blk(d1, 8), blk(d, 6)
         self.down1, self.down2, self.up1, self.up2 = _Pack(d, d1), _Pack(d1, d2), _Unpack(d2, d1), _Unpack(d1, d)
         self.final_norm = RMSNorm(d)

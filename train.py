@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import time
 from datetime import datetime
@@ -275,14 +276,25 @@ def load_checkpoint_into(ckpt, model, ema=None):
         ema.load_state_dict(ema_sd)
 
 
+# New hier coarse-core blocks (--init-from a shallower hier checkpoint) start as identity residuals: the output projection of each of the
+# two residual branches (mixer fuse weight+bias, FFN w_out) is zero, everything else keeps its fresh init so gradients reach it after step 1.
+_CORE_KEY = re.compile(r"denoise_(?:unet|model)\.core\.\d+\.(.+)$")
+IDENTITY_ZERO = ("fuse.weight", "fuse.bias", "ffn.w_out.weight")
+
+
 def expand_state_dict(src, target):
     """Warm start: widen the weights of `src` to the shapes of `target` (a state dict of the self-cond model). A 2-D weight that is
     only narrower in dim 1 (the denoiser input layer, whose appended x0_prev channels come last) is zero-padded, so with a zero
-    x0_prev the new model computes exactly the old function. Any other mismatch is an error."""
+    x0_prev the new model computes exactly the old function. Keys of extra hier coarse-core blocks (absent from `src`) keep their init
+    with IDENTITY_ZERO tensors zeroed. Any other mismatch is an error."""
     out = {}
     for k, v in target.items():
         if k not in src:
-            raise CheckpointError(f"warm start: missing key {k}")
+            m = _CORE_KEY.search(k)
+            if m is None:
+                raise CheckpointError(f"warm start: missing key {k}")
+            out[k] = torch.zeros_like(v) if m.group(1) in IDENTITY_ZERO else v.detach().clone()
+            continue
         w = src[k]
         if tuple(w.shape) != tuple(v.shape):
             if w.dim() == 2 and v.dim() == 2 and w.shape[0] == v.shape[0] and w.shape[1] < v.shape[1]:
