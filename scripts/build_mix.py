@@ -11,12 +11,16 @@ Checks (64-byte hashed shingles, all positions for the eval check, 1/8 content-s
      natural-v1/v2 val/test evaluation books);
   2. a train window of a later source sharing a (sampled) shingle with an earlier source's train text is dropped.
 Run once: python scripts/build_mix.py   (refuses to overwrite).
+Option  --filter --out mix-clean-v1 : after the checks above, additionally drop train windows of the three modern sources
+(NOT Gutenberg, which keeps its 10 % unchanged) that mix_filters.reasons() flags as table markup / whitespace padding /
+symbol-heavy / repeated-symbol runs / digit-heavy. Val/test windows are never filtered (per-source CE stays comparable).
 """
 import json, os, sys, time
 import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
+sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, 'scripts'))
 import data
+import mix_filters
 
 L, K = 256, 64
 OUT = "mix-pilot-v1"
@@ -62,7 +66,7 @@ def grid_starts(lo, hi):
     return lo + np.arange((hi - lo) // L, dtype=np.int64) * L
 
 
-def main():
+def main(OUT=OUT, filt=False):
     outdir = os.path.join(data.DATA_ROOT, OUT)
     if os.path.exists(outdir):
         raise SystemExit(f"{outdir} exists; refusing to overwrite")
@@ -107,22 +111,38 @@ def main():
         st = cand["train"][s] - lo
         ok_e, ok_p = window_ok(f_eval, st), window_ok(f_prev, st)
         keep[s] = cand["train"][s][ok_e & ok_p]
+        fstat = {}
+        if filt and s != "gutenberg":
+            kept_pre = len(keep[s]); bad = np.zeros(kept_pre, bool); cnt = {}
+            reas = {k: np.zeros(kept_pre, bool) for k in ("ws_run", "pipes", "symbols", "sym_run", "digits")}
+            for a0 in range(0, kept_pre, 50000):
+                Wn = cat["train"][keep[s][a0:a0 + 50000, None] + np.arange(L)]
+                for k, v in mix_filters.reasons(Wn).items():
+                    reas[k][a0:a0 + 50000] = v
+            for v in reas.values(): bad |= v
+            fstat = dict(filter_kept_before=kept_pre, filter_dropped=int(bad.sum()), filter_dropped_by_reason={k: int(v.sum()) for k, v in reas.items()})
+            keep[s] = keep[s][~bad]
         stats[s] = dict(train_bytes=int(hi - lo), candidate_windows=int(len(st)), dropped_eval_overlap=int((~ok_e).sum()),
                         dropped_prev_source_overlap=int((~ok_p & ok_e).sum()), kept_windows=int(len(keep[s])),
                         shingles_shared_with_eval=int(f_eval.sum()), shingles_shared_with_earlier_sources_sampled=int(f_prev.sum()),
-                        val_windows=int(len(cand["val"][s])), test_windows=int(len(cand["test"][s])))
+                        val_windows=int(len(cand["val"][s])), test_windows=int(len(cand["test"][s])), **fstat)
         print(s, stats[s], f"({time.time()-t0:.0f}s)", flush=True)
     os.makedirs(outdir)
     arrs = {f"train_{s}": keep[s] for s, _, _ in SOURCES}
     arrs.update({f"{sp}_{s}": cand[sp][s] for sp in ("val", "test") for s, _, _ in SOURCES})
     np.savez(os.path.join(outdir, "windows.npz"), **arrs)
-    mix = dict(window=L, shingle=K, stats=stats,
+    mix = dict(window=L, shingle=K, filter=bool(filt), stats=stats,
                sources=[dict(name=s, dataset=d, weight=w, ranges={sp: list(map(int, rng_[sp][s])) for sp in cat}) for s, d, w in SOURCES])
     json.dump(mix, open(os.path.join(outdir, "mix.json"), "w"), indent=1)
-    json.dump(dict(name=OUT, kind="mixture", note="see scripts/build_mix.py; Gutenberg = natural-v2 train only",
+    json.dump(dict(name=OUT, kind="mixture", note="see scripts/build_mix.py; Gutenberg = natural-v2 train only" + ("; modern-source train windows filtered by mix_filters" if filt else ""),
                    splits={sp: {"bytes": int(len(cat[sp]))} for sp in cat}), open(os.path.join(outdir, "manifest.json"), "w"), indent=1)
     print("done", f"{time.time()-t0:.0f}s")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument("--out", default=OUT); ap.add_argument("--filter", action="store_true")
+    a = ap.parse_args()
+    if a.filter and a.out == OUT:
+        raise SystemExit("--filter needs a new --out name (never overwrite mix-pilot-v1)")
+    main(a.out, a.filter)

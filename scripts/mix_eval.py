@@ -18,6 +18,7 @@ from gate_text import wordlist
 from ladder_eval import make_samples, per_sample_words, boot_ci
 from sampler_sweep import uniform_steps
 import ngram_score as ns
+import mix_filters as mf
 
 MIX = "mix-pilot-v1"
 SCORER = {"gutenberg": "natural-v1"}  # scorer training data when it differs from the source dataset
@@ -48,21 +49,30 @@ def main():
     ap.add_argument("--run", required=True)
     ap.add_argument("--out", default=None)
     ap.add_argument("--n", type=int, default=128)
+    ap.add_argument("--mix", default=MIX, help="mixture whose val windows/ memorization corpus are used (val windows are identical across the mixes)")
+    ap.add_argument("--keep", type=int, default=0, help="score/write only the first N generated samples (sampling runs in batches of 32 with fixed per-batch seeds, so the first N are identical across models)")
+    ap.add_argument("--scales", default="1.0,0.8", help="comma-separated sampler scales to generate (default both)")
+    ap.add_argument("--ce-windows", type=int, default=0, help="CE on the first N val windows per source (0 = all)")
+    ap.add_argument("--no-write", action="store_true", help="rpw only: drop the write-back so the workspace cannot influence the bytes (workspace-off ablation)")
+    ap.add_argument("--samples-only", action="store_true", help="skip CE and real-val reference; only samples + text health (cheap trajectory read)")
     a = ap.parse_args()
     out = a.out or a.run
     os.makedirs(out, exist_ok=True)
     model, cfg = train.load_model_from_run(a.run, "ema", "cuda"); model.eval()
+    if a.no_write:
+        model.denoise_unet.skip_write = True
     gd = model.gaussian_diffusion; T = gd.num_timesteps; assert gd.param == "logits"
-    mix = json.load(open(os.path.join(data.DATA_ROOT, MIX, "mix.json")))
-    z = np.load(os.path.join(data.DATA_ROOT, MIX, "windows.npz"))
-    val = data.load_split(MIX, "val"); L = cfg.model.seq_len
-    R = dict(run=a.run, mix=MIX, ce={}, samplers={}, real={})
-    for s in mix["sources"]:
-        R["ce"][s["name"]] = source_ce(model, cfg, val, z[f"val_{s['name']}"])
+    MIXN = a.mix
+    mix = json.load(open(os.path.join(data.DATA_ROOT, MIXN, "mix.json")))
+    z = np.load(os.path.join(data.DATA_ROOT, MIXN, "windows.npz"))
+    val = data.load_split(MIXN, "val"); L = cfg.model.seq_len
+    R = dict(run=a.run, mix=MIXN, ce={}, samplers={}, real={})
+    for s in ([] if a.samples_only else mix["sources"]):
+        R["ce"][s["name"]] = source_ce(model, cfg, val, z[f"val_{s['name']}"][:a.ce_windows or None])
         print(a.run, s["name"], R["ce"][s["name"]], flush=True)
-    mem = data.load_split(MIX, "train").numpy().tobytes()
+    mem = data.load_split(MIXN, "train").numpy().tobytes()
     tools = {}
-    for s in mix["sources"]:
+    for s in ([] if a.samples_only else mix["sources"]):
         tb = data.load_split(s["dataset"], "train").numpy().tobytes()
         tools[s["name"]] = (wordlist(tb), ns.load_or_train(SCORER.get(s["name"], s["dataset"]), verbose=False)); del tb
 
@@ -74,22 +84,24 @@ def main():
         return blk
 
     g = np.random.default_rng(0)
-    for s in mix["sources"]:  # real reference windows per source
+    for s in ([] if a.samples_only else mix["sources"]):  # real reference windows per source
         pool = z[f"val_{s['name']}"]; pick = pool[g.choice(len(pool), a.n, replace=False)]
         real = [val[p:p + L].numpy().tobytes() for p in pick]
         R["real"][s["name"]] = score(real)[s["name"]]
     samples_out = {}
-    for sc in (1.0, 0.8):
+    for sc in [float(x) for x in a.scales.split(',')]:
         samples, sps, _ = make_samples(model, True, sc, uniform_steps(T, T), a.n)
+        samples = samples[:a.keep or None]
         m = ev.text_metrics(samples, mem)
         blk = dict(valid_utf8=m["valid_utf8_rate"], distinct_4gram=m["distinct_4gram_ratio"], repeated_8gram=m["repeated_8gram_fraction"],
                    memorization32=m["memorization_rate"], memorization64=ev.memorization_rate(samples, mem, win=64, stride=32),
-                   per_source=score(samples))
+                   per_source=({} if a.samples_only else score(samples)), junk=mf.junk_sample_metrics(samples, mem))
         R["samplers"][f"s{sc}"] = blk; samples_out[f"s{sc}"] = [x.hex() for x in samples]
         print(a.run, sc, blk, flush=True)
     json.dump(R, open(os.path.join(out, "mix_eval.json"), "w"), indent=1)
     json.dump(samples_out, open(os.path.join(out, "mix_samples.json"), "w"))
-    open(os.path.join(out, "mix_eval.md"), "w", encoding="utf-8").write(to_md(R))
+    if not a.samples_only:
+        open(os.path.join(out, "mix_eval.md"), "w", encoding="utf-8").write(to_md(R))
     print("wrote", out)
 
 
