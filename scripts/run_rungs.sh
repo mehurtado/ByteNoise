@@ -10,11 +10,13 @@ LOG=runs/rungs_driver.log
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a $LOG; }
 
 SET="diffusion.param=logits diffusion.t_sampling=warp model.embed_norm=8 diffusion.ce_weight=0 diffusion.x0_rescale=true train.batch_size=32 train.grad_accum_steps=1 train.learning_rate=0.0003 train.eval_interval=2000 train.save_interval=5000 model.model_dim=96"
+SETHYB="${SET% model.model_dim=96}"  # hybrid preset keeps its own width (256); same recipe as runs/ladder_hyb_s*
 declare -A EXTRA UPD
 # bs128: lr scaled 2x (6e-4, not sqrt-4x), 6250 updates = 800k examples = the baseline's 25000 x 32; eval every 500 updates = every 64k examples; 8 x 128 = the same 1024 val windows
 EXTRA[bs128]="train.batch_size=128 train.learning_rate=0.0006 train.eval_interval=500 train.eval_batches=8 train.save_interval=2000"; UPD[bs128]=6250
 # equal-updates companion (25000 updates at bs128 = 4x the examples), only if time permits
 EXTRA[bs128_25k]="train.batch_size=128 train.learning_rate=0.0006 train.eval_interval=2000 train.eval_batches=8"; UPD[bs128_25k]=25000
+EXTRA[hyb_selfcond]="diffusion.self_cond=true"  # hybrid denoiser + logit head + self-conditioning (preset hybrid, 25k x bs32, as ladder_hyb_s0)
 EXTRA[base]=""
 EXTRA[R4]="model.embed_norm=4"
 EXTRA[R6]="model.embed_norm=6"
@@ -29,12 +31,13 @@ run_one() { # rung seed
   rung=$1; seed=$2; suf=""; [ "$seed" != "0" ] && suf="_s$seed"
   name=rung_${rung}${suf}; [ "$rung" = "base" ] && name=ladder_w96_s$seed  # base = the ladder's width-96 recipe, extra seeds
   d=runs/$name; upd=${UPD[$rung]:-25000}
+  preset=compact; setv="$SET"; case $rung in hyb_*) preset=hybrid; setv="$SETHYB";; esac
   if [ ! -f $d/ladder_eval.json ]; then
     if [ ! -f $d/status.json ]; then
       if [ -d $d ] && [ -f $d/checkpoint.pt ]; then
         say "resume $name"; $PY train.py train --resume $d >> runs/$name.log 2>&1
       else
-        say "train $name"; $PY train.py train --preset compact --precision fp32 --data natural-v1 --max-updates $upd --seed $seed --run-dir $d --set $SET ${EXTRA[$rung]} > runs/$name.log 2>&1
+        say "train $name"; $PY train.py train --preset $preset --precision fp32 --data natural-v1 --max-updates $upd --seed $seed --run-dir $d --set $setv ${EXTRA[$rung]} > runs/$name.log 2>&1
       fi
       for k in 1 2; do
         [ -f $d/status.json ] && break

@@ -249,6 +249,35 @@ def load_checkpoint_into(ckpt, model, ema=None):
         ema.load_state_dict(ema_sd)
 
 
+def expand_state_dict(src, target):
+    """Warm start: widen the weights of `src` to the shapes of `target` (a state dict of the self-cond model). A 2-D weight that is
+    only narrower in dim 1 (the denoiser input layer, whose appended x0_prev channels come last) is zero-padded, so with a zero
+    x0_prev the new model computes exactly the old function. Any other mismatch is an error."""
+    out = {}
+    for k, v in target.items():
+        if k not in src:
+            raise CheckpointError(f"warm start: missing key {k}")
+        w = src[k]
+        if tuple(w.shape) != tuple(v.shape):
+            if w.dim() == 2 and v.dim() == 2 and w.shape[0] == v.shape[0] and w.shape[1] < v.shape[1]:
+                w = torch.cat((w, w.new_zeros(w.shape[0], v.shape[1] - w.shape[1])), dim=1)
+            else:
+                raise CheckpointError(f"warm start: {k}: {tuple(w.shape)} cannot be widened to {tuple(v.shape)}")
+        out[k] = w
+    extra = [k for k in src if k not in target]
+    if extra:
+        raise CheckpointError(f"warm start: unexpected keys {extra[:3]}")
+    return out
+
+
+def warm_start(path, model, ema=None):
+    """Initialise model (and EMA) from a checkpoint of the same architecture without the self-cond input channels (--init-from)."""
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    model.load_state_dict(expand_state_dict(ck["model_state_dict"], model.state_dict()))
+    if ema is not None and "ema_state_dict" in ck:
+        ema.load_state_dict(expand_state_dict(_ema_state_dict(ck["ema_state_dict"]), ema.state_dict()))
+
+
 def prepare_run_dir(run_dir, mode):
     ckpt = os.path.join(run_dir, CHECKPOINT_NAME)
     if mode == "fresh":
@@ -282,7 +311,7 @@ def sample_text(model, n, seed):
     return [tok.decode(row) for row in out]
 
 
-def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None, stop_after=None, quiet=False):
+def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None, stop_after=None, quiet=False, init_from=None):
     """Train toward cfg.train.max_updates optimizer updates (or cfg.train.max_seconds of wall clock).
 
     stop_after halts (with a checkpoint) once that many total updates are done.
@@ -307,6 +336,10 @@ def run_training(cfg, run_dir, mode="fresh", device="auto", data=None, val=None,
         torch.manual_seed(t.seed)
     model = build_model(cfg).to(device)
     ema = EMA(model, decay=t.ema_decay, warmup=t.ema_warmup).to(device)
+    if init_from:
+        if ckpt is not None:
+            raise CheckpointError("--init-from is for fresh runs")
+        warm_start(init_from, model, ema)
     optimizer = make_optimizer(model, t)
     clock = {"start": time.time()}
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda(t.warmup_updates, t.max_updates, t.learning_rate, t.lr_min,
@@ -569,6 +602,7 @@ def main(argv=None):
     tr.add_argument("--data", help="prepared dataset name under data/ (e.g. natural-v1)")
     tr.add_argument("--precision", choices=["fp32", "bf16", "fp16"])
     tr.add_argument("--set", nargs="*", default=[], metavar="train.key=value", help="override other TrainConfig fields")
+    tr.add_argument("--init-from", metavar="CKPT", help="fresh run only: initialise weights (and EMA) from a checkpoint, zero-padding the self-cond input channels")
     tr.add_argument("--device", default="auto")
 
     ge = sub.add_parser("generate", help="sample from a checkpoint")
@@ -597,7 +631,7 @@ def main(argv=None):
                 ov.update(tov)
                 cfg = validate(override(cfg, **ov))
                 run_dir = args.run_dir or os.path.join("runs", f"{cfg.name}-{datetime.now():%Y%m%d_%H%M%S}")
-                run_training(cfg, run_dir, "fresh", args.device)
+                run_training(cfg, run_dir, "fresh", args.device, init_from=args.init_from)
         elif args.cmd == "eval":
             import eval as E
             E.main(args.rest)
