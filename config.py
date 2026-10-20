@@ -28,6 +28,9 @@ class ModelConfig:
     hybrid_ngram_kernel: int = 5      # odd
     embed_norm: float = 0.0           # >0: embedding table rows are L2-normalised to this norm (e.g. sqrt(byte_embed_dim) = unit per-element RMS); 0 = off (excluded from hash)
     hier_core_blocks: int = 2         # hier only: blocks at the lowest resolution; 2 = original (excluded from hash when 2 or not hier)
+    hier_fine_blocks: int = 0         # hier only: extra full-resolution encoder AND decoder blocks (each side); 0 = original (excluded from hash when 0 or not hier)
+    hybrid_par_coarse: int = 0        # hybrid only: 1 = parallel coarse branch (pack 4 -> width 384 -> one trimmed hybrid block -> unpack, zero-init gate) after block `hybrid_par_after`; 0 = off (excluded from hash)
+    hybrid_par_after: int = 3         # number of flat blocks before the branch splits off (only used when hybrid_par_coarse=1)
     tied_head: bool = False           # logits only: logits = exp(log_scale) * z @ E^T (z = byte_embed_dim projection of the final features) instead of a separate 256-way layer; False = off (excluded from hash)
 
     @property
@@ -126,7 +129,7 @@ class Config:
         full = self.to_dict()
         if self.arch == "diffusion":
             diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v) and not (k == "ce_schedule" and v == "const") and not (k == "param" and v == "eps") and not (k == "t_sampling" and v == "uniform") and not (k == "x0_mse_weight" and v == 0.0) and not (k == "span_noise_prob" and v == 0.0)}  # sampler-only / default-off; keeps old hashes
-            mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0) and not (k == "tied_head" and not v) and not (k == "hier_core_blocks" and (v == 2 or self.model.denoiser != "hier"))}
+            mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0) and not (k == "tied_head" and not v) and not (k == "hier_core_blocks" and (v == 2 or self.model.denoiser != "hier")) and not (k == "hier_fine_blocks" and (v == 0 or self.model.denoiser != "hier")) and not (k in ("hybrid_par_coarse", "hybrid_par_after") and not self.model.hybrid_par_coarse)}
             hyb = [k for k in mod if k.startswith("hybrid_")]
             if self.model.denoiser == "unet":  # birnn/hybrid-only fields don't exist for U-Net configs; keeps old hashes
                 mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult", *hyb)}
@@ -265,6 +268,8 @@ def validate(cfg):
     if m.denoiser == "hier":
         if m.hier_core_blocks < 1:
             errors.append("hier_core_blocks must be >= 1")
+        if m.hier_fine_blocks < 0:
+            errors.append("hier_fine_blocks must be >= 0")
         if m.model_dim % 96 != 0 or m.seq_len % 4 != 0 or m.rnn_conv % 2 == 0:
             errors.append("hier needs model_dim divisible by 96, seq_len divisible by 4 and an odd rnn_conv")
     if m.denoiser in ("birnn", "hybrid", "hier"):

@@ -9,11 +9,11 @@ from train import warm_start, expand_state_dict, CheckpointError, IDENTITY_ZERO
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def build(core=2, seed=0):
+def build(core=2, seed=0, fine=0):
     c = get_preset("hier")
     dif = replace(c.diffusion, param="logits", self_cond=True, ce_weight=0.0, x0_rescale=True, t_sampling="warp")
     torch.manual_seed(seed)
-    return ByteDiffusionLM(replace(c, diffusion=dif, model=replace(c.model, embed_norm=8, dropout=0.0, hier_core_blocks=core)))
+    return ByteDiffusionLM(replace(c, diffusion=dif, model=replace(c.model, embed_norm=8, dropout=0.0, hier_core_blocks=core, hier_fine_blocks=fine)))
 
 
 def perturb(net):  # give FiLM weight so every block's time/branch path is active
@@ -98,6 +98,39 @@ class HierExpand(unittest.TestCase):
         new.zero_grad(); loss, _ = new(batch); loss.backward()
         dead = [(i, n) for i, blk in enumerate(blocks) for n, p in blk.named_parameters() if not (p.grad is not None and torch.isfinite(p.grad).all() and float(p.grad.abs().sum()) > 0)]
         self.assertEqual(dead, [])  # after one step every tensor of the new blocks (inner weights, FiLM) gets gradient too
+
+    def test_fine_blocks_identity_and_hash(self):
+        h = get_preset("hier")
+        self.assertEqual(h.model.hier_fine_blocks, 0)
+        d = h.to_dict(); del d["model"]["hier_fine_blocks"]
+        self.assertEqual(Config.from_dict(d).architecture_hash(), h.architecture_hash())
+        h1 = replace(h, model=replace(h.model, hier_fine_blocks=1))
+        self.assertNotEqual(h1.architecture_hash(), h.architecture_hash()); validate(h1)
+        with self.assertRaises(ValueError):
+            validate(replace(h, model=replace(h.model, hier_fine_blocks=-1)))
+        n = lambda m: sum(p.numel() for p in m.parameters())
+        added = n(build(2, fine=1)) - n(build(2))
+        print("one fine enc+dec pair adds", added)
+        with tempfile.TemporaryDirectory() as dd:
+            old, ema_old, path = self._ckpt(dd)
+            new = build(2, seed=2, fine=1).eval(); ema_new = EMA(new, decay=0.999)
+            warm_start(path, new, ema_new)
+        for m in (new, ema_new.model):
+            for blk in list(m.denoise_unet.fine_enc_x) + list(m.denoise_unet.fine_dec_x):
+                for k, p in blk.named_parameters():
+                    if k in IDENTITY_ZERO:
+                        self.assertEqual(float(p.abs().sum()), 0.0, k)
+                perturb(blk)
+        e = old.cfg.model.byte_embed_dim
+        x = torch.randn(3, 256, e); xp = torch.randn(3, 256, e); t = torch.tensor([3, 400, 900])
+        with torch.no_grad():
+            for a, b in ((old, new), (ema_old.model, ema_new.model)):
+                ya = a.gaussian_diffusion.denoise(x, t, x0_prev=xp); yb = b.gaussian_diffusion.denoise(x, t, x0_prev=xp)
+                self.assertLess(float((ya - yb).abs().max()), 1e-6)
+        loss, _ = new.train()(torch.randint(0, 256, (4, 256))); loss.backward()
+        for blk in list(new.denoise_unet.fine_enc_x) + list(new.denoise_unet.fine_dec_x):
+            for k in IDENTITY_ZERO:
+                self.assertGreater(float(blk.get_parameter(k).grad.abs().sum()), 0.0, k)
 
     def test_other_missing_keys_still_error(self):
         a, b = build(2), build(2)

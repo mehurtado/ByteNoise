@@ -276,9 +276,10 @@ def load_checkpoint_into(ckpt, model, ema=None):
         ema.load_state_dict(ema_sd)
 
 
-# New hier coarse-core blocks (--init-from a shallower hier checkpoint) start as identity residuals: the output projection of each of the
+# New hier coarse-core and extra fine (fine_enc_x / fine_dec_x) blocks (--init-from a shallower hier checkpoint) start as identity residuals: the output projection of each of the
 # two residual branches (mixer fuse weight+bias, FFN w_out) is zero, everything else keeps its fresh init so gradients reach it after step 1.
-_CORE_KEY = re.compile(r"denoise_(?:unet|model)\.core\.\d+\.(.+)$")
+_CORE_KEY = re.compile(r"denoise_(?:unet|model)\.(?:core|fine_enc_x|fine_dec_x)\.\d+\.(.+)$")
+_PAR_KEY = re.compile(r"denoise_(?:unet|model)\.par\.")
 IDENTITY_ZERO = ("fuse.weight", "fuse.bias", "ffn.w_out.weight")
 
 
@@ -291,6 +292,8 @@ def expand_state_dict(src, target):
     for k, v in target.items():
         if k not in src:
             m = _CORE_KEY.search(k)
+            if m is None and _PAR_KEY.search(k):  # parallel coarse branch: fresh init; its gate is zero by construction
+                out[k] = v.detach().clone(); continue
             if m is None:
                 raise CheckpointError(f"warm start: missing key {k}")
             out[k] = torch.zeros_like(v) if m.group(1) in IDENTITY_ZERO else v.detach().clone()

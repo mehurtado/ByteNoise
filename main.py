@@ -460,6 +460,26 @@ class HybridBlock(nn.Module):
         return h + self.ffn(self.mix(y))
 
 
+class _ParCoarse(nn.Module):
+    """Parallel coarse branch for the flat hybrid: pack four adjacent positions -> width 384 -> one trimmed hybrid block -> project and unpack,
+    added back through a zero-initialised per-channel gate (so the model starts as the unchanged flat one)."""
+    def __init__(self, m: ModelConfig):
+        super().__init__()
+        d, w = m.model_dim, 384
+        self.pnorm, self.pin = RMSNorm(4 * d), nn.Linear(4 * d, w)
+        self.block = HierBlock(w, w // 2, 8, m.rnn_conv, 3.0, m.dropout)
+        self.pout, self.gate = nn.Linear(w, 4 * d), nn.Parameter(torch.zeros(d))
+        self.hd = w // 8
+
+    def forward(self, h, t_emb):
+        b, n, d = h.shape
+        if n % 4:
+            raise ValueError("parallel coarse branch needs a sequence length divisible by four")
+        z = self.pin(self.pnorm(h.reshape(b, n // 4, 4 * d)))
+        z = self.block(z, t_emb, rotary_cache(n // 4, self.hd, h.device))
+        return h + self.gate * self.pout(z).reshape(b, n, d)
+
+
 class HybridDenoiser(nn.Module):
     """Parallel multi-branch (conv / bidirectional recurrent / global attention / n-gram) noise predictor.
     Same interface as UNet1D: (b, n, in_embed), (b,) -> (b, n, out_dim)."""
@@ -471,6 +491,8 @@ class HybridDenoiser(nn.Module):
         self.blocks = nn.ModuleList([HybridBlock(m) for _ in range(m.hybrid_layers)])
         for blk in self.blocks:  # scaled residual init
             nn.init.normal_(blk.ffn.w_out.weight, std=0.02 / math.sqrt(2 * m.hybrid_layers))
+        self.par_after = m.hybrid_par_after
+        self.par = _ParCoarse(m) if m.hybrid_par_coarse else None
         self.final_norm = RMSNorm(d)
         self.out = nn.Linear(d, out_dim)
         self.head_dim = d // m.hybrid_heads
@@ -482,8 +504,10 @@ class HybridDenoiser(nn.Module):
             self._rope = rotary_cache(n, self.head_dim, x_embed.device)
         t_emb = self.time_mlp(time)
         h = self.inp(x_embed) + t_emb[:, None]
-        for blk in self.blocks:
+        for i, blk in enumerate(self.blocks):
             h = blk(h, t_emb, self._rope)
+            if self.par is not None and i + 1 == self.par_after:
+                h = self.par(h, t_emb)
         return self.out(self.final_norm(h))
 
 
@@ -541,6 +565,8 @@ class HierDenoiser(nn.Module):
         self.fine_enc, self.mid_enc = blk(d, 6), blk(d1, 8)
         self.core = nn.ModuleList([blk(d2, 8) for _ in range(m.hier_core_blocks)])
         self.mid_dec, self.fine_dec = blk(d1, 8), blk(d, 6)
+        self.fine_enc_x = nn.ModuleList([blk(d, 6) for _ in range(m.hier_fine_blocks)])  # extra full-resolution blocks after fine_enc / after fine_dec
+        self.fine_dec_x = nn.ModuleList([blk(d, 6) for _ in range(m.hier_fine_blocks)])
         self.down1, self.down2, self.up1, self.up2 = _Pack(d, d1), _Pack(d1, d2), _Unpack(d2, d1), _Unpack(d1, d)
         self.final_norm = RMSNorm(d)
         self.out = nn.Linear(d, out_dim)
@@ -553,12 +579,16 @@ class HierDenoiser(nn.Module):
         r0, r1, r2 = (rotary_cache(n // s, h, dev) for s, h in zip((1, 2, 4), self.hd))
         t = self.time_mlp(time)
         fine = self.fine_enc(self.inp(x_embed), t, r0)
+        for blk in self.fine_enc_x:
+            fine = blk(fine, t, r0)
         mid = self.mid_enc(self.down1(fine), t, r1)
         z = self.down2(mid)
         for blk in self.core:
             z = blk(z, t, r2)
         z = self.mid_dec(self.up1(z, mid), t, r1)
         z = self.fine_dec(self.up2(z, fine), t, r0)
+        for blk in self.fine_dec_x:
+            z = blk(z, t, r0)
         return self.out(self.final_norm(z))
 
 
