@@ -32,6 +32,7 @@ class ModelConfig:
     hybrid_par_coarse: int = 0        # hybrid only: 1 = parallel coarse branch (pack 4 -> width 384 -> one trimmed hybrid block -> unpack, zero-init gate) after block `hybrid_par_after`; 0 = off (excluded from hash)
     hybrid_par_after: int = 3         # number of flat blocks before the branch splits off (only used when hybrid_par_coarse=1)
     rpw_workspace_dim: int = 192      # rpw only: workspace width (byte width = model_dim; both multiples of 32, seq_len % 4 == 0); excluded from hash for other denoisers
+    rpw_joint_head: bool = False      # rpw only: joint four-byte mixture head (K=4 shared alternatives per non-overlapping byte group); excluded from hash when False
     rpw_enc_attn: bool = False        # rpw only: replace the 2nd encoder block by conv(d=1,2) -> overlapping local attention (32-byte windows, stride 16) -> gated FFN; excluded from hash when False
     tied_head: bool = False           # logits only: logits = exp(log_scale) * z @ E^T (z = byte_embed_dim projection of the final features) instead of a separate 256-way layer; False = off (excluded from hash)
 
@@ -134,7 +135,7 @@ class Config:
         full = self.to_dict()
         if self.arch == "diffusion":
             diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v) and not (k == "ce_schedule" and v == "const") and not (k == "param" and v == "eps") and not (k == "t_sampling" and v == "uniform") and not (k == "x0_mse_weight" and v == 0.0) and not (k == "span_noise_prob" and v == 0.0) and not (k in ("rollout_steps", "rollout_jump") and full["diffusion"].get("rollout_prob", 0.0) == 0.0) and not (k == "rollout_prob" and v == 0.0)}  # sampler-only / default-off; keeps old hashes
-            mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0) and not (k == "tied_head" and not v) and not (k == "hier_core_blocks" and (v == 2 or self.model.denoiser != "hier")) and not (k == "hier_fine_blocks" and (v == 0 or self.model.denoiser != "hier")) and not (k in ("hybrid_par_coarse", "hybrid_par_after") and not self.model.hybrid_par_coarse) and not (k == "rpw_workspace_dim" and self.model.denoiser != "rpw") and not (k == "rpw_enc_attn" and (not v or self.model.denoiser != "rpw"))}
+            mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0) and not (k == "tied_head" and not v) and not (k == "hier_core_blocks" and (v == 2 or self.model.denoiser != "hier")) and not (k == "hier_fine_blocks" and (v == 0 or self.model.denoiser != "hier")) and not (k in ("hybrid_par_coarse", "hybrid_par_after") and not self.model.hybrid_par_coarse) and not (k == "rpw_workspace_dim" and self.model.denoiser != "rpw") and not (k == "rpw_enc_attn" and (not v or self.model.denoiser != "rpw")) and not (k == "rpw_joint_head" and (not v or self.model.denoiser != "rpw"))}
             hyb = [k for k in mod if k.startswith("hybrid_")]
             if self.model.denoiser == "unet":  # birnn/hybrid-only fields don't exist for U-Net configs; keeps old hashes
                 mod = {k: v for k, v in mod.items() if k not in ("denoiser", "rnn_layers", "rnn_conv", "rnn_ffn_mult", *hyb)}

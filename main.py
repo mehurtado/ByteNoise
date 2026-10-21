@@ -708,6 +708,69 @@ class _RPWWorkBlock(nn.Module):
         return z + self.ffn(_film(z, self.n2, s2, b2))
 
 
+class JointByteHead(nn.Module):
+    """Joint four-byte mixture head. Per non-overlapping group of four byte positions: concat the four final features -> shared hidden (SiLU) ->
+    K mixture weights pi_k and, per alternative k and byte j, logits = base_logits_j (the ordinary byte head's) + a small zero-mean-init delta_{k,j}(h).
+    p(b1..b4 | h) = sum_k pi_k prod_j p_{k,j}(b_j). forward returns the per-byte MARGINAL log-probabilities (sum_k pi_k p_{k,j}), which the diffusion
+    code uses unchanged as logits (x0_hat, self-conditioning, argmax); the joint components are kept in self.last for the loss and the decoder."""
+    def __init__(self, d, out_dim=256, K=4, hidden=128, delta_std=0.01):
+        super().__init__()
+        self.K, self.V = K, out_dim
+        self.hid = nn.Linear(4 * d, hidden)
+        self.pi = nn.Linear(hidden, K)
+        nn.init.zeros_(self.pi.weight); nn.init.zeros_(self.pi.bias)  # uniform mixture weights at init
+        self.delta = nn.Linear(hidden, K * 4 * out_dim, bias=False)
+        nn.init.normal_(self.delta.weight, std=delta_std)              # small differences break the symmetry between alternatives
+        self.last = None
+        self.mode = "joint"  # "joint" | "marginal": which CE and which final decode the diffusion wrapper uses (evaluation switch)
+
+    def forward(self, feat, base_logits):
+        b, n, d = feat.shape
+        G = n // 4
+        h = F.silu(self.hid(feat.reshape(b, G, 4 * d)))
+        logpi = F.log_softmax(self.pi(h).float(), dim=-1)                                   # (b, G, K)
+        logits = base_logits.float().reshape(b, G, 1, 4, self.V) + self.delta(h).float().view(b, G, self.K, 4, self.V)
+        logp = F.log_softmax(logits, dim=-1)                                                # (b, G, K, 4, V)
+        self.last = (logpi, logp)
+        return torch.logsumexp(logpi[..., None, None] + logp, dim=2).reshape(b, n, self.V)
+
+    @staticmethod
+    def joint_logprob(logpi, logp, tgt):
+        """log p(b1..b4) for tgt (b, G, 4): logsumexp_k (log pi_k + sum_j log p_{k,j}(b_j)) -> (b, G)."""
+        K = logp.size(2)
+        lp = logp.gather(-1, tgt[:, :, None, :, None].expand(-1, -1, K, -1, 1)).squeeze(-1).sum(-1)   # (b, G, K)
+        return torch.logsumexp(logpi + lp, dim=-1)
+
+    def joint_nll(self, x_bytes):
+        logpi, logp = self.last
+        b, n = x_bytes.shape
+        return -self.joint_logprob(logpi, logp, x_bytes.reshape(b, n // 4, 4))
+
+    @staticmethod
+    def candidates(logpi, logp):
+        """One candidate per alternative (its per-position argmax), scored under the FULL mixture; returns (best (b, G, 4), all candidates, scores).
+        Bounded candidate selection, not exact joint MAP."""
+        b, G, K, _, V = logp.shape
+        cand = logp.argmax(-1)                                                                # (b, G, Kc, 4)
+        idx = cand[:, :, :, None, :, None].expand(-1, -1, -1, K, -1, 1)                       # (b, G, Kc, K, 4, 1)
+        lp = logp[:, :, None].expand(-1, -1, K, -1, -1, -1).gather(-1, idx).squeeze(-1).sum(-1)  # (b, G, Kc, K)
+        score = torch.logsumexp(logpi[:, :, None, :] + lp, dim=-1)                            # (b, G, Kc)
+        best = score.argmax(-1)
+        return cand.gather(2, best[:, :, None, None].expand(-1, -1, 1, 4)).squeeze(2), cand, score
+
+    def joint_decode(self):
+        best, _, _ = self.candidates(*self.last)
+        return best.reshape(best.size(0), -1)
+
+    def diagnostics(self):
+        logpi, logp = self.last
+        pi = logpi.exp()
+        am = logp.argmax(-1)                                                                  # (b, G, K, 4)
+        K = am.size(2)
+        agree = sum((am[:, :, a] == am[:, :, c]).float().mean() for a in range(K) for c in range(a + 1, K)) / (K * (K - 1) / 2)
+        return {"joint_pi_entropy": (-(pi * logpi).sum(-1)).mean().detach(), "joint_pi_max": pi.max(-1).values.mean().detach(), "joint_alt_agree": agree.detach()}
+
+
 class RPWDenoiser(nn.Module):
     """Read-process-write byte denoiser: 2 local blocks at byte resolution, read cross-attention into packed (4-byte) summaries, 4 workspace
     blocks over the summaries, write cross-attention back into the bytes, 2 local blocks, RMSNorm, byte logits. Same interface as UNet1D.
@@ -728,6 +791,7 @@ class RPWDenoiser(nn.Module):
         self.write_nq, self.write_nk, self.write = RMSNorm(d), RMSNorm(w), _RPWAttn(d, w, d // 32, std)
         self.dec = nn.ModuleList([_RPWLocalBlock(d, std) for _ in range(local_blocks)])
         self.final_norm, self.out = RMSNorm(d), nn.Linear(d, out_dim, bias=False)
+        self.joint = JointByteHead(d, out_dim) if m.rpw_joint_head else None
         self.skip_write = False  # test hook only: drop the write-back
 
     def group_counts(self):
@@ -735,7 +799,8 @@ class RPWDenoiser(nn.Module):
         return {"input projection": n(self.inp), "time MLP": n(self.time_mlp), "byte conditioner": n(self.byte_cond), "workspace conditioner": n(self.work_cond),
                 "local blocks": n(self.enc, self.dec) - sum(n(b.na, b.acond, b.attn) for b in self.enc if hasattr(b, "attn")),
                 **({"encoder local attention (+norm, conditioner)": sum(n(b.na, b.acond, b.attn) for b in self.enc if hasattr(b, "attn"))} if any(hasattr(b, "attn") for b in self.enc) else {}), "pack norm+projection": n(self.pack_norm, self.pack), "read attention+norms": n(self.read_nq, self.read_nk, self.read),
-                "workspace blocks": n(self.work), "write attention+norms": n(self.write_nq, self.write_nk, self.write), "final norm+output": n(self.final_norm, self.out)}
+                "workspace blocks": n(self.work), "write attention+norms": n(self.write_nq, self.write_nk, self.write), "final norm+output": n(self.final_norm, self.out),
+                **({"joint head": n(self.joint)} if self.joint is not None else {})}
 
     def forward(self, x_embed, time):
         b, n, _ = x_embed.shape
@@ -758,7 +823,10 @@ class RPWDenoiser(nn.Module):
             x = x + self.write(self.write_nq(x), self.write_nk(z), rb, rs)
         for blk in self.dec:
             x = blk(x, cb, t, rb)
-        return self.out(self.final_norm(x))
+        feat = self.final_norm(x)
+        if self.joint is not None:
+            return self.joint(feat, self.out(feat))
+        return self.out(feat)
 
 
 # --- Gaussian Diffusion Process ---
@@ -1075,11 +1143,17 @@ class GaussianDiffusion(nn.Module):
         """param=logits: CE(logits, byte) is the loss at every t (no 1/sqrt(ab) factor anywhere)."""
         logits = logits.float()
         ce = F.cross_entropy(logits.reshape(-1, logits.size(-1)), x_bytes.reshape(-1), reduction='none').view(logits.shape[:2])
+        jh = getattr(self.denoise_model, 'joint', None)
+        if jh is not None and jh.mode == 'joint':  # joint group NLL / 4 per byte, spread over the group's bytes (marginal CE stays in stats)
+            marg_ce = ce.detach().mean()
+            ce = (jh.joint_nll(x_bytes) / 4).repeat_interleave(4, dim=1)
         wsum = w.sum(1).clamp(min=1)
         per_sample = (ce * w).sum(1) / wsum
         loss = per_sample.mean()
         x0_hat = self.x0_from_logits(logits, table)
         stats = {'ce_loss': loss.detach(), 'per_sample_loss': per_sample.detach(), 't': t.detach()}
+        if jh is not None and jh.mode == 'joint':
+            stats.update(jh.diagnostics()); stats['marginal_ce'] = marg_ce
         if self.x0_mse_weight > 0:  # E (target and mixture table) detached so the term trains the logits only and cannot collapse E
             mse = (x0_hat - x_start_embed.detach().float()).pow(2).mean(dim=-1)
             loss = loss + self.x0_mse_weight * ((mse * w).sum(1) / wsum).mean()

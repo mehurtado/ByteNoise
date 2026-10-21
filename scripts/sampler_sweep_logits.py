@@ -40,6 +40,9 @@ def sample_logits(model, n, steps, s=1.0):
             mean = (ab_p.sqrt() * beta / (1 - ab_t)).float() * x0 + (a_eff.sqrt() * (1 - ab_p) / (1 - ab_t)).float() * x
             sd = ((1 - ab_p) / (1 - ab_t) * beta).sqrt().float()
         x = mean if last else mean + sd * s * torch.randn_like(x)
+    jh = getattr(gd.denoise_model, 'joint', None)
+    if jh is not None and jh.mode == 'joint':  # joint head: bounded candidate selection under the full mixture (state of the last step's denoise call)
+        return jh.joint_decode().cpu().to(torch.uint8)
     return logits.argmax(-1).cpu().to(torch.uint8)
 
 

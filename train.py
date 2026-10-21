@@ -282,6 +282,7 @@ _CORE_KEY = re.compile(r"denoise_(?:unet|model)\.(?:core|fine_enc_x|fine_dec_x)\
 _PAR_KEY = re.compile(r"denoise_(?:unet|model)\.par\.")
 IDENTITY_ZERO = ("fuse.weight", "fuse.bias", "ffn.w_out.weight")
 _RPW_NEW = re.compile(r"denoise_(?:unet|model)\.enc\.1\.(?:na|acond|attn)\.")  # rpw encoder-attention swap: fresh (zero-output) attention, its norm and conditioner
+_RPW_JOINT = re.compile(r"denoise_(?:unet|model)\.joint\.")  # rpw joint four-byte head: fresh init (delta small, pi uniform), base byte head transfers
 _RPW_TRIM = re.compile(r"denoise_(?:unet|model)\.enc\.1\.convs\.[23]\.")
 
 
@@ -298,7 +299,7 @@ def expand_state_dict(src, target):
                 src[mk] = src[mk][:, : target[mk].shape[1]]
     for k, v in target.items():
         if k not in src:
-            if _RPW_NEW.search(k):
+            if _RPW_NEW.search(k) or _RPW_JOINT.search(k):
                 out[k] = v.detach().clone(); continue
             m = _CORE_KEY.search(k)
             if m is None and _PAR_KEY.search(k):  # parallel coarse branch: fresh init; its gate is zero by construction

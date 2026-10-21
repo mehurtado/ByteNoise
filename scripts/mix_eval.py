@@ -54,11 +54,13 @@ def main():
     ap.add_argument("--scales", default="1.0,0.8", help="comma-separated sampler scales to generate (default both)")
     ap.add_argument("--ce-windows", type=int, default=0, help="CE on the first N val windows per source (0 = all)")
     ap.add_argument("--no-write", action="store_true", help="rpw only: drop the write-back so the workspace cannot influence the bytes (workspace-off ablation)")
+    ap.add_argument("--head-mode", choices=["joint", "marginal"], default="joint", help="joint-head models only: joint CE + candidate-selection decode, or marginal CE + per-byte argmax")
     ap.add_argument("--samples-only", action="store_true", help="skip CE and real-val reference; only samples + text health (cheap trajectory read)")
     a = ap.parse_args()
     out = a.out or a.run
     os.makedirs(out, exist_ok=True)
     model, cfg = train.load_model_from_run(a.run, "ema", "cuda"); model.eval()
+    if getattr(model.denoise_unet, "joint", None) is not None: model.denoise_unet.joint.mode = a.head_mode
     if a.no_write:
         model.denoise_unet.skip_write = True
     gd = model.gaussian_diffusion; T = gd.num_timesteps; assert gd.param == "logits"
