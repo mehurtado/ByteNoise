@@ -1,10 +1,10 @@
 #!/bin/bash
-# Joint four-byte head, 10-minute test. Plan: runs/rpw_joint_PLAN.md. Waits for the rollout chain (DONE ctrl) before touching the GPU.
+# Joint four-byte head, 10-minute test. Plan: runs/rpw_joint_PLAN.md. Waits for the rollout chain (DONE stage2) before touching the GPU.
 cd "$(dirname "$0")/.."
 PY=.venv/Scripts/python; export PYTHONIOENCODING=utf-8
 LOG=runs/rpw_joint_driver.log; R=runs/rpw_joint_s0
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a $LOG; }
-while ! grep -q "DONE ctrl" runs/rpw_roll_driver.log 2>/dev/null; do sleep 30; done
+while ! grep -q "DONE stage2" runs/rpw_roll_driver.log 2>/dev/null; do sleep 30; done
 say "bench"
 $PY - > runs/rpw_joint_bench.log 2>&1 <<'PYEOF'
 import sys; sys.path.insert(0,'scripts'); sys.path.insert(0,'.')
