@@ -72,6 +72,9 @@ class DiffusionConfig:
     param: str = "eps"                # "eps" (predict noise) | "logits" (CDCD-style: 256 byte logits, x0_hat = softmax @ E; CE is the loss). "eps" excluded from hash
     t_sampling: str = "uniform"       # "uniform" | "warp" (loss-EMA-weighted timestep sampling, 50 bins); "uniform" excluded from hash
     x0_mse_weight: float = 0.0        # logits only: weight of an extra MSE(x0_hat, E[x]) term (E detached); 0 = off (excluded from hash)
+    rollout_prob: float = 0.0         # logits only: fraction of training examples whose x_t is the landing state of a detached model rollout (excluded from hash with its two companions when 0)
+    rollout_steps: int = 2            # reverse steps of the rollout (landing at the example's t)
+    rollout_jump: int = 50            # timesteps per rollout step (closed-form jump posterior)
     span_noise_prob: float = 0.0      # logits only: fraction of training examples noised per word segment (independent t per segment) + a sqrt(alpha_bar) input channel; 0 = off (excluded from hash)
 
 
@@ -130,7 +133,7 @@ class Config:
     def architecture_hash(self):
         full = self.to_dict()
         if self.arch == "diffusion":
-            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v) and not (k == "ce_schedule" and v == "const") and not (k == "param" and v == "eps") and not (k == "t_sampling" and v == "uniform") and not (k == "x0_mse_weight" and v == 0.0) and not (k == "span_noise_prob" and v == 0.0)}  # sampler-only / default-off; keeps old hashes
+            diff = {k: v for k, v in full["diffusion"].items() if k != "x0_rescale" and not (k in ("cond_prompt", "self_cond") and not v) and not (k == "ce_schedule" and v == "const") and not (k == "param" and v == "eps") and not (k == "t_sampling" and v == "uniform") and not (k == "x0_mse_weight" and v == 0.0) and not (k == "span_noise_prob" and v == 0.0) and not (k in ("rollout_steps", "rollout_jump") and full["diffusion"].get("rollout_prob", 0.0) == 0.0) and not (k == "rollout_prob" and v == 0.0)}  # sampler-only / default-off; keeps old hashes
             mod = {k: v for k, v in full["model"].items() if not (k == "embed_norm" and v == 0.0) and not (k == "tied_head" and not v) and not (k == "hier_core_blocks" and (v == 2 or self.model.denoiser != "hier")) and not (k == "hier_fine_blocks" and (v == 0 or self.model.denoiser != "hier")) and not (k in ("hybrid_par_coarse", "hybrid_par_after") and not self.model.hybrid_par_coarse) and not (k == "rpw_workspace_dim" and self.model.denoiser != "rpw") and not (k == "rpw_enc_attn" and (not v or self.model.denoiser != "rpw"))}
             hyb = [k for k in mod if k.startswith("hybrid_")]
             if self.model.denoiser == "unet":  # birnn/hybrid-only fields don't exist for U-Net configs; keeps old hashes
@@ -247,6 +250,10 @@ def validate(cfg):
         errors.append(f"unknown diffusion.t_sampling {d.t_sampling!r}")
     if m.embed_norm < 0 or d.x0_mse_weight < 0:
         errors.append("embed_norm and x0_mse_weight must be >= 0")
+    if not 0.0 <= d.rollout_prob <= 1.0 or d.rollout_steps < 1 or d.rollout_jump < 1:
+        errors.append("rollout_prob must be in [0, 1], rollout_steps and rollout_jump >= 1")
+    if d.rollout_prob > 0 and (d.param != "logits" or d.span_noise_prob > 0 or d.cond_prompt):
+        errors.append("rollout needs diffusion.param=logits without span_noise_prob or cond_prompt")
     if not 0.0 <= d.span_noise_prob <= 1.0:
         errors.append("span_noise_prob must be in [0, 1]")
     if (m.tied_head or d.span_noise_prob > 0) and d.param != "logits":

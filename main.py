@@ -788,9 +788,13 @@ class GaussianDiffusion(nn.Module):
         t_sampling='uniform',
         x0_mse_weight=0.0,
         head=None,
-        span_noise_prob=0.0
+        span_noise_prob=0.0,
+        rollout_prob=0.0,
+        rollout_steps=2,
+        rollout_jump=50
     ):
         super().__init__()
+        self.rollout_prob, self.rollout_steps, self.rollout_jump = rollout_prob, rollout_steps, rollout_jump
         self.head = head  # optional TiedHead applied to the denoiser output (param=logits)
         self.span_noise_prob = span_noise_prob
         self.param = param
@@ -1035,6 +1039,38 @@ class GaussianDiffusion(nn.Module):
         self.t_loss_ema.copy_(torch.where(present, new, self.t_loss_ema))
         self.t_loss_seen.copy_(self.t_loss_seen | present)
 
+    def jump_posterior(self, x0, x_s, s, u):
+        """Mean and variance of q(x_u | x_s, x0) for u < s (closed form for any jump; u = s - 1 equals q_posterior)."""
+        ab_s, ab_u = extract(self.alphas_cumprod, s, x_s.shape), extract(self.alphas_cumprod, u, x_s.shape)
+        ar = ab_s / ab_u  # alpha product between u and s
+        mean = ab_u.sqrt() * (1 - ar) / (1 - ab_s) * x0 + ar.sqrt() * (1 - ab_u) / (1 - ab_s) * x_s
+        var = (1 - ab_u) / (1 - ab_s) * (1 - ar)
+        return mean, var
+
+    @torch.no_grad()
+    def rollout_state(self, x_start_embed, x_t_embed, t, table):
+        """Replace x_t of a random subset (prob rollout_prob, only examples with t + steps*jump < T) by the landing state of the model's own
+        reverse chain started from fresh noise at t + steps*jump: same x0_hat-from-logits posterior and carried self-conditioning as the sampler,
+        no gradient. Returns (new x_t, fraction of the batch replaced)."""
+        k, J = self.rollout_steps, self.rollout_jump
+        sel = (t + k * J <= self.num_timesteps - 1) & (torch.rand(t.shape[0], device=t.device) < self.rollout_prob)
+        idx = sel.nonzero().squeeze(1)
+        if idx.numel() == 0:
+            return x_t_embed, 0.0
+        x0, tt = x_start_embed[idx], t[idx]
+        s = tt + k * J
+        x = self.q_sample(x0, s)
+        prev = None
+        for i in range(k):
+            u = s - J
+            x0_hat = self.x0_from_logits(self.denoise(x, s, x0_prev=prev if self.self_cond else None).float(), table)
+            prev = x0_hat
+            mean, var = self.jump_posterior(x0_hat, x, s, u)
+            x = mean + var.sqrt() * torch.randn_like(x)
+            s = u
+        out = x_t_embed.clone(); out[idx] = x.to(out.dtype)
+        return out, idx.numel() / t.shape[0]
+
     def _logits_losses(self, x_start_embed, x_t_embed, t, noise, logits, x_bytes, w, table, t_noise=None):
         """param=logits: CE(logits, byte) is the loss at every t (no 1/sqrt(ab) factor anywhere)."""
         logits = logits.float()
@@ -1079,6 +1115,9 @@ class GaussianDiffusion(nn.Module):
         logits_mode = self.param == 'logits'
         if logits_mode and (x_bytes is None or table is None):
             raise ValueError('param=logits training needs x_bytes and the embedding table')
+        roll_frac = 0.0
+        if self.rollout_prob > 0 and self.training and logits_mode and clean_mask is None and sqrt_ab is None:
+            x_t_embed, roll_frac = self.rollout_state(x_start_embed, x_t_embed, t, table)
         x0_prev = None
         if self.self_cond:
             with torch.no_grad():
@@ -1092,6 +1131,8 @@ class GaussianDiffusion(nn.Module):
         if logits_mode:
             w = torch.ones(x_bytes.shape, device=x_bytes.device) if clean_mask is None else (~clean_mask).float()
             loss, stats = self._logits_losses(x_start_embed, x_t_embed, t, noise, predicted_noise, x_bytes, w, table, t_noise=t_pos)
+            if self.rollout_prob > 0:
+                stats['rollout_frac'] = torch.tensor(roll_frac, device=t.device)
             if self.training and self.t_sampling == 'warp':
                 self.update_t_stats(t, stats['per_sample_loss'])
             return loss, stats
@@ -1228,6 +1269,9 @@ class ByteDiffusionLM(nn.Module):
             x0_mse_weight=d.x0_mse_weight,
             head=head,
             span_noise_prob=d.span_noise_prob,
+            rollout_prob=d.rollout_prob,
+            rollout_steps=d.rollout_steps,
+            rollout_jump=d.rollout_jump,
         )
 
     def embedding_table(self):
