@@ -792,6 +792,7 @@ class RPWDenoiser(nn.Module):
         self.dec = nn.ModuleList([_RPWLocalBlock(d, std) for _ in range(local_blocks)])
         self.final_norm, self.out = RMSNorm(d), nn.Linear(d, out_dim, bias=False)
         self.joint = JointByteHead(d, out_dim) if m.rpw_joint_head else None
+        self.repeats = m.rpw_local_repeats  # each local block applied this many times in a row, weights shared
         self.skip_write = False  # test hook only: drop the write-back
 
     def group_counts(self):
@@ -814,7 +815,8 @@ class RPWDenoiser(nn.Module):
         rs = _rope_fp32(4 * torch.arange(n // 4, device=dev) + 1.5, 32)     # summary j covers bytes 4j..4j+3: centre 4j+1.5
         x = self.inp(x_embed)
         for blk in self.enc:
-            x = blk(x, cb, t, rb)
+            for _ in range(self.repeats):
+                x = blk(x, cb, t, rb)
         z = self.pack(self.pack_norm(x.reshape(b, n // 4, -1)))
         z = z + self.read(self.read_nq(z), self.read_nk(x), rs, rb)
         for blk in self.work:
@@ -822,7 +824,8 @@ class RPWDenoiser(nn.Module):
         if not self.skip_write:
             x = x + self.write(self.write_nq(x), self.write_nk(z), rb, rs)
         for blk in self.dec:
-            x = blk(x, cb, t, rb)
+            for _ in range(self.repeats):
+                x = blk(x, cb, t, rb)
         feat = self.final_norm(x)
         if self.joint is not None:
             return self.joint(feat, self.out(feat))
