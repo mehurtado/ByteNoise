@@ -162,5 +162,6 @@ Each phase ships independently; stopping after phase 2 already gives the unified
 Done, additive (nothing moved): phases 1-4 in `src/bytenoise/`, `configs/`, `tests/bn/` (see `docs/runbook.md`). Deviations from the
 plan above: stdlib server instead of FastAPI; eval results under `var/evals`; the trainer wraps the original loop rather than
 replacing it; native runs keep trainer files in `<run>/train/`; package dirs named `runstore` and `datasets` (`runs/` is gitignored).
-Not done: phase 5 (physical moves), adapters for `latenthyp`/`latentloop`/`maskrev`, prefix-conditioned diffusion `continue`,
+Phase 5 (done, partial): `scripts/` -> `experiments/` (only `scripts/status.py` stays: the /status skill hard-codes it), root handoff/plan docs -> `docs/archive/handoffs/`, `EXPERIMENTS.md` -> `docs/experiments.md`, root-clutter test `tests/bn/test_repo_layout.py`. The legacy core modules (`main.py`, `train.py`, `config.py`, `data.py`, ...) deliberately stay at the root: the mapping in section 8 splits them into packages, which is a rewrite, not a move.
+Not done: adapters for `latenthyp`/`latentloop`/`maskrev`, prefix-conditioned diffusion `continue`,
 a full tailscale deployment, PNG export verification (matplotlib not installed).
