@@ -47,7 +47,7 @@ bn serve --port 8765 --token <secret> --allow-host desktop-667n4qr.tailb3695b.ts
 tailscale serve --bg 8765        # tailnet only; never `tailscale funnel`
 ```
 `--tailnet-users` (header-only auth) works only when no token is set; with a token the token is always required, because any local process can forge the Tailscale header. The agent binds 127.0.0.1 only and refuses a non-loopback bind without a token. Jobs on `--device cuda` stay queued while another
-python process holds the GPU (same preflight as `scripts/launch_*.ps1`); `--device cpu` jobs start immediately.
+python process holds the GPU (same preflight as the old `launch_*.ps1` scripts); `--device cpu` jobs start immediately.
 
 ## Known limits (honest list)
 
@@ -71,4 +71,4 @@ python process holds the GPU (same preflight as `scripts/launch_*.ps1`); `--devi
 * Legacy `state_N.pt` / `model_N.pt` run formats are indexed and plotted but cannot be loaded for generation/eval (only `checkpoint.pt`).
 * `/api/generate` and `/api/eval` are synchronous and serialised (one model op at a time); a long diffusion sample blocks that request
   (hybrid, 1000 steps, CPU: ~2 min).
-* Physical reorganisation of `scripts/`, root docs and `~/ByteNoise_dev` (design phase 5) was deliberately not done.
+* Phase 5 was done in part: `scripts/` is now `experiments/` (except `scripts/status.py`), root docs moved under `docs/`. The legacy core modules stay at the root; `~/ByteNoise_dev` was left alone.
