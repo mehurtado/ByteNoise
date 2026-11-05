@@ -1,0 +1,7 @@
+# a few updates on CPU, enough to prove plumbing end to end
+train:
+  max_updates: 10
+  log_interval: 2
+  save_interval: 5
+  eval_interval: 5
+  eval_batches: 2

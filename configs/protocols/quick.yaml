@@ -1,0 +1,9 @@
+# fast CPU sanity protocol (used by tests and the UI default)
+name: quick
+data: dummy-v1
+split: val
+seed: 1234
+modes:
+  bpb: {max_windows: 16, batch_size: 8}
+  tasks: {per_regime: 20}
+  generation: {n: 2, new_bytes: 32, prompt_len: 8, seeds: [0], sampler: {temperature: 0.8, top_k: 40}}

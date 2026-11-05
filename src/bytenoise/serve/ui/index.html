@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ByteNoise</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>ByteNoise</h1>
+  <nav id="tabs"></nav>
+  <span id="gpu" class="badge">gpu: ?</span>
+  <input id="token" type="password" placeholder="token (if required)" size="14">
+</header>
+<main>
+  <section id="tab-runs"></section>
+  <section id="tab-run" hidden></section>
+  <section id="tab-train" hidden></section>
+  <section id="tab-test" hidden></section>
+  <section id="tab-data" hidden></section>
+</main>
+<div id="err" role="alert" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# comparable cross-run protocol; changing anything here changes the hash and flags comparisons
+name: standard
+data: natural-v2
+split: val
+seed: 1234
+modes:
+  bpb: {max_windows: 256, batch_size: 32}
+  tasks: {per_regime: 100}
+  generation: {n: 8, new_bytes: 200, prompt_len: 32, seeds: [0, 1, 2, 3], sampler: {temperature: 0.8, top_k: 40}}

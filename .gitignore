@@ -14,3 +14,6 @@ data/ngram_*.pkl
 # user-authorised personal writing for the 6 h run: never commit (text, window index, shingles)
 data/personal-v1/
 data/mix-clean-v2/
+
+# bytenoise v2 state (evals, job queue, sqlite index) lives outside runs/
+var/

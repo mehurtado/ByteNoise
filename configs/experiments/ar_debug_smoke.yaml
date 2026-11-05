@@ -1,0 +1,4 @@
+name: ar-debug-smoke
+model: ar_debug
+recipe: smoke
+data: dummy-v1

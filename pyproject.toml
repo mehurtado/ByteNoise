@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bytenoise"
+version = "0.2.0"
+description = "Byte-level model research: model registry, eval harness, trainer, run store, remote agent and UI"
+requires-python = ">=3.11"
+dependencies = ["numpy", "torch", "pyyaml"]
+
+[project.optional-dependencies]
+plots = ["matplotlib"]
+test = ["pytest"]
+
+[project.scripts]
+bn = "bytenoise.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"bytenoise.serve" = ["ui/*"]

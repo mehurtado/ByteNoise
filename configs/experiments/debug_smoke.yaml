@@ -1,0 +1,9 @@
+name: debug-smoke
+model: debug
+recipe: smoke
+data: dummy-v1
+stages:
+  - name: main
+  - name: lowlr
+    init_from: previous
+    train: {max_updates: 6, learning_rate: 1.0e-4, save_interval: 3, eval_interval: 3}
