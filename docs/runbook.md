@@ -43,13 +43,25 @@ Results are stamped with the protocol hash; any edit to a protocol changes it.
 ## Exposing it over Tailscale (not done by the code; run on the GPU box yourself)
 
 ```
-bn serve --port 8765 --token <secret> --allow-host desktop-667n4qr.tailb3695b.ts.net --tailnet-users you@example.com
+bn serve --port 8765 --token <secret> --allow-host desktop-667n4qr.tailb3695b.ts.net
 tailscale serve --bg 8765        # tailnet only; never `tailscale funnel`
 ```
-The agent binds 127.0.0.1 only and refuses a non-loopback bind without a token. Jobs on `--device cuda` stay queued while another
+`--tailnet-users` (header-only auth) works only when no token is set; with a token the token is always required, because any local process can forge the Tailscale header. The agent binds 127.0.0.1 only and refuses a non-loopback bind without a token. Jobs on `--device cuda` stay queued while another
 python process holds the GPU (same preflight as `scripts/launch_*.ps1`); `--device cpu` jobs start immediately.
 
 ## Known limits (honest list)
+
+- `/api/generate` and `/api/eval` are CPU-only; GPU work goes through the job queue (which preflights for other GPU users).
+- Jobs run with the agent's privileges. `train.data_dir` and absolute dataset paths are rejected for API/CLI-submitted jobs.
+- `bn remote` follows HTTP redirects with the token attached and stores the token in plaintext in `remotes.json` (chmod is a no-op on Windows); use only trusted tailnet URLs.
+- Checkpoints load with `torch.load(weights_only=False)`: only put trusted files under `runs/`.
+- Native runs killed hard are shown `incomplete` after 30 min of metric silence, not instantly.
+
+* Legacy run status is inferred: `done` = status.json says stopped by max_updates/max_seconds, `timed_out` = stopped by the wall-clock
+  budget before reaching max_updates, `running` = metrics changed in the last 5 min, anything else is `incomplete` (really "unknown";
+  about two thirds of old runs have no usable status.json).
+* `bn remote add` stores the token in plaintext in `~/.bytenoise/remotes.json` (override: `BYTENOISE_REMOTES`).
+* `bn eval compare` needs a prior `bn eval run` with the same protocol and `--which` for every run.
 
 * Training still executes the original `train.run_training` loop; v2 adds manifests, stage chaining, queueing, failure bookkeeping.
   Checkpoints of native runs are `<run>/train/checkpoint.pt` (`runstore.reader.payload_dir`).

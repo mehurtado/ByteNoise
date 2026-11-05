@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from ..core.fsutil import atomic_write
 from ..core.paths import REPO_ROOT, runs_dir
 
 SCHEMA = 1
@@ -25,12 +26,6 @@ def git_state():
         return rev + ("+dirty" if dirty else "")
     except Exception:
         return "unknown"
-
-
-def _atomic_write(path, text):
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
 
 
 class RunWriter:
@@ -59,7 +54,7 @@ class RunWriter:
         return json.loads((self.path / "run.json").read_text(encoding="utf-8"))
 
     def write_manifest(self, manifest):
-        _atomic_write(self.path / "run.json", json.dumps(manifest, indent=2, default=str))
+        atomic_write(self.path / "run.json", json.dumps(manifest, indent=2, default=str))
 
     def update(self, **fields):
         m = self.read_manifest()
@@ -74,5 +69,5 @@ class RunWriter:
     def write_json(self, rel, obj):
         p = self.path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(p, json.dumps(obj, indent=2, default=str))
+        atomic_write(p, json.dumps(obj, indent=2, default=str))
         return p

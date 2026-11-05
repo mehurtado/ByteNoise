@@ -6,6 +6,7 @@ const el = (tag, props = {}, ...kids) => {
   for (const [k, v] of Object.entries(props)) {
     if (k === "class") e.className = v;
     else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k.includes("-")) e.setAttribute(k, v);
     else if (v !== false && v != null) e[k] = v;
   }
   for (const c of kids.flat()) e.append(c instanceof Node ? c : document.createTextNode(String(c ?? "")));
@@ -18,6 +19,7 @@ const token = $("token");
 token.value = localStorage.getItem("bn_token") || "";
 token.addEventListener("change", () => localStorage.setItem("bn_token", token.value));
 
+window.addEventListener("unhandledrejection", (e) => e.preventDefault()); // api() already toasted the error
 let errTimer;
 function showErr(msg) {
   const e = $("err"); e.textContent = msg; e.hidden = false;
@@ -53,7 +55,7 @@ function drawChart(canvas, steps, series) {
   g.fillText(String(x0), pad.l, H - 6); g.fillText(String(x1), W - pad.r - 30, H - 6);
   series.forEach((s, k) => {
     g.strokeStyle = PALETTE[k % PALETTE.length]; g.lineWidth = 1.5; g.beginPath(); let pen = false;
-    s.y.forEach((v, i) => { if (v == null || !isFinite(v)) { pen = false; return; } const px = X((s.steps || steps)[i]), py = Y(v); pen ? g.lineTo(px, py) : g.moveTo(px, py); pen = true; });
+    s.y.forEach((v, i) => { if (v == null || !isFinite(v)) return; const px = X((s.steps || steps)[i]), py = Y(v); pen ? g.lineTo(px, py) : g.moveTo(px, py); pen = true; });
     g.stroke();
   });
 }
@@ -80,7 +82,7 @@ async function loadRuns() {
   const root = $("tab-runs");
   const d = await api("runs"); runsCache = d.runs;
   const filter = el("input", { placeholder: "filter id / data / arch", oninput: () => draw() });
-  const status = el("select", { onchange: () => draw() }, ["all", "running", "done", "incomplete", "failed", "stopped"].map((s) => el("option", { value: s }, s)));
+  const status = el("select", { onchange: () => draw() }, ["all", "running", "done", "timed_out", "incomplete", "failed", "stopped"].map((s) => el("option", { value: s }, s)));
   const body = el("tbody"), cmp = el("div");
   function draw() {
     const f = filter.value.toLowerCase();
@@ -127,7 +129,7 @@ async function openRun(id) { selectedRun = id; setTab("run"); const root = $("ta
   const evals = el("div", {}, d.evals.length ? d.evals.map((e) => el("button", { class: "act sec", onclick: () => showEval(e, evOut) }, e.file)) : el("span", { class: "dim" }, "no evals yet"));
   const evOut = el("pre", { hidden: true });
   root.replaceChildren(
-    el("h2", {}, id), el("div", { class: "card" }, el("table", {}, Object.entries(info).filter(([k]) => k !== "extra").map(([k, v]) => el("tr", {}, el("th", {}, k), el("td", {}, fmt(v)))))),
+    el("h2", {}, id), el("div", { class: "card" }, el("table", {}, Object.entries(info).filter(([k]) => k !== "extra").map(([k, v]) => el("tr", {}, el("th", {}, k), el("td", {}, k === "mtime" ? new Date(v * 1000).toLocaleString() : fmt(v)))))),
     el("div", { class: "card" }, canvas, leg, keysBox), el("div", { class: "card" }, el("b", {}, "Eval results"), el("div", { class: "row" }, evals), evOut),
     d.config ? el("div", { class: "card" }, el("b", {}, "Resolved config"), el("pre", {}, JSON.stringify(d.config, null, 1))) : "");
   paint();

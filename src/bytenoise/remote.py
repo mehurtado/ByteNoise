@@ -45,3 +45,5 @@ def call(name, path, body=None, timeout=30):
         except ValueError:
             msg = ""
         raise RuntimeError(f"{name}: HTTP {e.code} {msg}") from None
+    except OSError as e:  # URLError subclasses OSError
+        raise RuntimeError(f"{name}: cannot reach {r['url']} ({getattr(e, 'reason', e)})") from None

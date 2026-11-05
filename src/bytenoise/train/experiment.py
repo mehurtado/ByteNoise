@@ -44,6 +44,16 @@ def _check_keys(d, allowed, what):
         raise ValueError(f"unknown {what} keys {bad}; allowed {sorted(allowed)}")
 
 
+def _check_data(cfg, allow_path, baseline=None):
+    """Dataset must be a plain name under data/; free-form directories are only for trusted local callers."""
+    t = cfg.get("train") or {}
+    if not allow_path:
+        if t.get("data_dir") and t.get("data_dir") != (baseline or {}).get("data_dir"):
+            raise ValueError("train.data_dir is not allowed here")
+        if t.get("data") and not _DATASET.match(str(t["data"])):
+            raise ValueError(f"invalid dataset name {t['data']!r}")
+
+
 def load_experiment(ref, sets=(), allow_path=False):
     raw = load_yaml(resolve_ref("experiments", ref, allow_path))
     _check_keys(raw, TOP_KEYS, "experiment")
@@ -62,7 +72,11 @@ def load_experiment(ref, sets=(), allow_path=False):
         base["train"]["data"] = data
     if "seed" in raw:
         base["train"]["seed"] = int(raw["seed"])
+    known = set(base)
+    baseline = dict(base.get("train") or {})
     base = apply_sets(base, sets)  # CLI/API overrides win over the yaml
+    _check_keys(base, known, "config")
+    _check_data(base, allow_path, baseline)
     from config import Config  # legacy; validates field names and types
 
     stages_raw = raw.get("stages") or [{"name": "main"}]
@@ -70,6 +84,8 @@ def load_experiment(ref, sets=(), allow_path=False):
     for i, sr in enumerate(stages_raw):
         _check_keys(sr, STAGE_KEYS, "stage")
         cfg = deep_merge(base if prev is None else prev, {k: sr[k] for k in SECTIONS if k in sr})
+        cfg = apply_sets(cfg, sets)  # explicit overrides beat per-stage yaml values too
+        _check_data(cfg, allow_path, baseline)
         try:
             Config.from_dict(cfg)
         except (TypeError, KeyError) as e:

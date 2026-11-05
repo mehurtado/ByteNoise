@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+import math
 import torch
 
 CAP_LOSS = "loss"
@@ -25,6 +26,20 @@ class ScoreOut:
     nll: torch.Tensor    # (b, n) nats of each target byte given its prefix
     top1: torch.Tensor   # (b, n) bool, argmax prediction equals the target
     exact: bool          # True for exact likelihoods (AR); False for bounds
+
+
+def _coerce(typ, name, v):
+    if typ == "bool":
+        if isinstance(v, bool):
+            return v
+        raise ValueError(f"sampler knob {name} must be a boolean")
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        raise ValueError(f"sampler knob {name} must be a finite number")
+    if typ == "int":
+        if int(v) != v:
+            raise ValueError(f"sampler knob {name} must be an integer")
+        return int(v)
+    return float(v)
 
 
 class ByteModel(ABC):
@@ -81,7 +96,7 @@ class ByteModel(ABC):
             raise ValueError(f"unknown sampler knobs {bad}; {self.family} accepts {sorted(schema)}")
         out = {}
         for k, spec in schema.items():
-            v = {"int": int, "float": float, "bool": bool}[spec["type"]](sampler.get(k, spec["default"]))
+            v = _coerce(spec["type"], k, sampler.get(k, spec["default"]))
             if ("min" in spec and v < spec["min"]) or ("max" in spec and v > spec["max"]):
                 raise ValueError(f"sampler knob {k}={v} outside [{spec.get('min')}, {spec.get('max')}]")
             out[k] = v

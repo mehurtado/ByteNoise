@@ -197,6 +197,11 @@ def _remote_args(a):
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # cp1252 pipes must not kill a listing
+        except (AttributeError, ValueError):
+            pass
     a = build_parser().parse_args(argv)
     try:
         a.fn(a)

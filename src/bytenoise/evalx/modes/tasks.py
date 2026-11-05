@@ -6,11 +6,24 @@ from ...models.base import CAP_SCORE
 from ..harness import register_mode
 
 
+def _eval_sets(T, ctx, per_regime):
+    """The dataset's frozen eval_tasks.json when present (identical to legacy eval_tasks); otherwise fresh items from a seed
+    distinct from the training stream's, with in-distribution items that occur in the train split excluded."""
+    import data as legacy_data
+    from ...datasets.store import dataset_path, load_split
+    if (dataset_path(ctx["data"]) / "eval_tasks.json").exists():
+        sets = legacy_data.load_eval_tasks(ctx["data"])
+        return {t: {r: items[:per_regime] for r, items in regs.items()} for t, regs in sets.items()}
+    train = bytes(load_split(ctx["data"], "train").numpy())
+    exclude = set(line + b"\n" for line in train.split(b"\n"))
+    return T.make_eval_sets(ctx["seed"] + 3, per_regime=per_regime, exclude=exclude)
+
+
 @register_mode("tasks", needs={CAP_SCORE})
 def run(model, spec, ctx):
     legacy.ensure()
     import tasks as T
-    sets = T.make_eval_sets(ctx["seed"], per_regime=int(spec.get("per_regime", 100)))
+    sets = _eval_sets(T, ctx, int(spec.get("per_regime", 100)))
     L = model.seq_len + 1
     bs = int(spec.get("batch_size", 64))
     out = {}

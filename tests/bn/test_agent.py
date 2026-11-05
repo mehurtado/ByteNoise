@@ -120,3 +120,65 @@ def test_stop_queued_job(home):
     assert jobs.stop(j["id"])["status"] == "stopped"
     assert jobs.schedule() is None  # a stopped job is never started
     assert jobs.get(j["id"])["status"] == "stopped"
+
+
+# --- regressions from the adversarial review ---
+
+def test_sets_cannot_point_training_at_arbitrary_directories(server, tmp_path):
+    for sets in (["train.data=", f"train.data_dir={tmp_path}"], [f"train.data={tmp_path}"], ["trian.max_updates=5"]):
+        s, _ = call(server, "POST", "/api/jobs", {"experiment": "ar_debug_smoke", "sets": sets})
+        assert s == 400, sets
+
+
+def test_tailnet_header_alone_does_not_bypass_token(home):
+    httpd, _ = make_server("127.0.0.1", 0, token="s3cret", tailnet_users=["me@x.com"])
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+    try:
+        assert call(port, "GET", "/api/jobs", token=None, headers={"Tailscale-User-Login": "me@x.com"})[0] == 401
+        assert call(port, "GET", "/api/jobs")[0] == 200
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_negative_content_length_and_odd_inputs_are_4xx(server):
+    c = http.client.HTTPConnection("127.0.0.1", server, timeout=10)
+    c.request("POST", "/api/jobs", headers={"Host": f"127.0.0.1:{server}", "Authorization": "Bearer s3cret",
+                                            "Content-Type": "application/json", "Content-Length": "-1"})
+    assert c.getresponse().status == 400
+    assert call(server, "GET", "/api/runs/x/metrics?max=0")[0] in (400, 404)
+    assert call(server, "GET", "/api/health", token="töken")[0] == 401
+
+
+def test_generate_rejects_cuda_and_failed_load_does_not_poison_cache(server):
+    assert call(server, "POST", "/api/generate", {"run": "nope", "device": "cuda"})[0] == 400
+    assert call(server, "POST", "/api/generate", {"run": "nope"})[0] == 400
+    assert call(server, "POST", "/api/generate", {"run": "nope"})[0] == 400  # not a 500 from a None cache entry
+
+
+def test_ui_is_not_frameable(server):
+    c = http.client.HTTPConnection("127.0.0.1", server)
+    c.request("GET", "/", headers={"Host": f"127.0.0.1:{server}"})
+    r = c.getresponse()
+    assert r.getheader("X-Frame-Options") == "DENY" and "frame-ancestors 'none'" in r.getheader("Content-Security-Policy")
+
+
+def test_junk_job_file_does_not_wedge_queue(home):
+    (jobs.jobs_dir() / "20250101-000000-abcd.json").write_text("")
+    (jobs.jobs_dir() / "20250101-000001-abcd.json").write_text("[1,2]")
+    assert jobs.list_jobs() == [] and jobs.schedule() is None
+
+
+def test_schedule_lock_is_exclusive_across_holders(home):
+    with jobs._schedule_lock() as a:
+        assert a
+        with jobs._schedule_lock(timeout=0.3) as b:
+            assert not b
+
+
+def test_recycled_pid_is_not_alive(home):
+    import os
+    me = {"pid": os.getpid(), "pid_start": jobs.proc_start(os.getpid())}
+    assert jobs.job_process_alive(me)
+    assert not jobs.job_process_alive({**me, "pid_start": me["pid_start"] + 12345})

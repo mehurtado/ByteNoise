@@ -44,6 +44,10 @@ class _LegacyBase(ByteModel):
         legacy.ensure()
         import train
         from main import EMA
+        if which not in ("ema", "raw"):
+            raise ValueError(f"which must be 'ema' or 'raw', got {which!r}")
+        if which == "ema" and "ema_state_dict" not in state:
+            raise ValueError("checkpoint has no EMA weights; use which='raw'")
         ema = EMA(self.module, decay=self.lcfg.train.ema_decay)
         train.load_checkpoint_into(state, self.module, ema)
         if which == "ema":

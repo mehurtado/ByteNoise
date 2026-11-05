@@ -97,7 +97,7 @@ runs/<YYYYMMDD>-<slug>-<4char>/
 
 ## 6. Remote training over Tailscale
 
-- `bn serve` runs one **agent** on the GPU box (single process, absolute `BYTENOISE_HOME`, never cwd-derived; launched by a `restart.bat`-style script per existing practice). Exposed with `tailscale serve` (tailnet only, not funnel); auth = allowlist on the `Tailscale-User-Login` header plus a bearer token for CLI.
+- `bn serve` runs one **agent** on the GPU box (single process, absolute `BYTENOISE_HOME`, never cwd-derived; launched by a `restart.bat`-style script per existing practice). Exposed with `tailscale serve` (tailnet only, not funnel); auth = bearer token (required whenever set); the `Tailscale-User-Login` allowlist is accepted only when no token is configured, since local processes can forge that header.
 - Job model: serial GPU queue (8 GB card). Start = spawn **detached** `python -m bytenoise.train run <resolved.yaml>` with pidfile + heartbeat in `run.json`/`events.jsonl`, so jobs survive agent restarts. Pre-flight checks lifted from `launch_*.ps1`: required files exist, run dir doesn't, no other python on the GPU.
 - API (also what the UI and CLI call): `POST /jobs` (experiment + `--set k=v` overrides), `GET /jobs`, `POST /jobs/{id}/stop|resume`, `GET /jobs/{id}/logs` (SSE tail), `GET /gpu`, `GET /runs`, `GET /runs/{id}/metrics?since=`, `POST /eval`, `POST /generate`.
 - CLI from any tailnet machine: `bn remote add desktop https://desktop-667n4qr.tailb3695b.ts.net`, then `bn --remote desktop train configs/experiments/foo.yaml --set recipe.lr=3e-4`.

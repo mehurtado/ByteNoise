@@ -11,6 +11,7 @@ Security model: it can start training processes and read run files, so
 import hmac
 import json
 import re
+import sys
 import threading
 import time
 import urllib.parse
@@ -33,7 +34,7 @@ UI_FILES = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js",
 CTYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 MAX_BODY = 1 << 20
 _WHICH = ("ema", "raw")
-_DEVICES = ("cpu", "cuda")
+_DEVICES = ("cpu",)  # GPU work goes through the job queue, which preflights for other GPU users
 
 
 class ApiError(Exception):
@@ -52,9 +53,13 @@ class Models:
 
     def get(self, run_id, which, device):
         key = (run_id, which, device)
+        path = safe_run_path(run_id)
+        ck = path / "checkpoint.pt"
+        stamp = ck.stat().st_mtime_ns if ck.exists() else None  # a live run's checkpoint changes under us
+        key = key + (stamp,)
         if key != self.key:
-            self.model = None  # free before loading the next
-            self.model = load_run_model(safe_run_path(run_id), which, device)
+            self.model, self.key = None, None  # free before loading the next; a failed load leaves the cache empty, not stale
+            self.model = load_run_model(path, which, device)
             self.key = key
         return self.model
 
@@ -83,6 +88,7 @@ def _opt_choice(body, key, choices, default):
 
 def make_handler(state: State):
     class Handler(BaseHTTPRequestHandler):
+        timeout = 15  # idle/half-open sockets must not pin threads forever
         server_version = f"bytenoise/{__version__}"
 
         def log_message(self, fmt, *args):
@@ -97,7 +103,8 @@ def make_handler(state: State):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             if ctype.startswith("text/html"):
-                self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'")
+                self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'")
+                self.send_header("X-Frame-Options", "DENY")
             self.end_headers()
             self.wfile.write(data)
 
@@ -115,15 +122,23 @@ def make_handler(state: State):
             if state.token is None and not state.tailnet_users:
                 return True
             auth = self.headers.get("Authorization") or ""
-            if state.token and auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], state.token):
-                return True
+            ok_token = bool(state.token and auth.startswith("Bearer ")
+                            and hmac.compare_digest(auth[7:].encode("utf-8"), state.token.encode("utf-8")))
+            if state.token:
+                # A tailnet identity header is spoofable by any local process, so when a token exists it is always required.
+                return ok_token
             user = (self.headers.get("Tailscale-User-Login") or "").lower()
             return bool(user and user in state.tailnet_users and self.client_address[0] in ("127.0.0.1", "::1"))
 
         def _body(self):
-            if "application/json" not in (self.headers.get("Content-Type") or ""):
+            if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
                 raise ApiError(415, "content-type must be application/json")
-            n = int(self.headers.get("Content-Length") or 0)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                raise ApiError(400, "bad content-length")
+            if n < 0:
+                raise ApiError(400, "bad content-length")
             if n > MAX_BODY:
                 raise ApiError(413, "body too large")
             try:
@@ -188,7 +203,7 @@ def route(state, method, parts, q, body):
             return {"info": info.to_dict(), "config": json.loads(cfg_f.read_text(encoding="utf-8")) if cfg_f else None,
                     "evals": report.list_results(p.name)}
         if head == "runs" and n == 3 and parts[2] == "metrics":
-            return read_metrics(safe_run_path(parts[1]), since=int(q.get("since", 0)), max_points=min(int(q.get("max", 1500)), 5000))
+            return read_metrics(safe_run_path(parts[1]), since=int(q.get("since", 0)), max_points=max(1, min(int(q.get("max", 1500)), 5000)))
         if head == "datasets":
             return list_datasets()
         if head == "protocols":
@@ -234,6 +249,8 @@ def route(state, method, parts, q, body):
                 n_bytes = int(body.get("n_bytes", 128))
                 if not 1 <= n_bytes <= 4096:
                     raise ApiError(400, "n_bytes must be in [1, 4096]")
+                if "continue" not in m.capabilities:
+                    n_bytes = min(n_bytes, m.seq_len)  # fixed-length samplers
                 out = m.generate(prompt, n_bytes, seed=int(body.get("seed", 0)), **(body.get("sampler") or {}))
             return {"text": out.decode("utf-8", "replace"), "repr": ascii(out), "model": m.describe()}
         if head == "eval":
@@ -266,12 +283,12 @@ def serve(host="127.0.0.1", port=8765, token=None, allow_hosts=(), tailnet_users
         while True:
             try:
                 jobs.schedule()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"agent: scheduler error: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
             time.sleep(poll_s)
 
     threading.Thread(target=pump, daemon=True).start()
-    print(f"bytenoise agent on http://{host}:{port}  (allowed hosts: {sorted(state.allow_hosts)})", flush=True)
+    print(f"bytenoise agent on http://{host}:{httpd.server_address[1]}  (allowed hosts: {sorted(state.allow_hosts)})", flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

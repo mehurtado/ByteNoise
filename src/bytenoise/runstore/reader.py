@@ -1,5 +1,6 @@
 """Read run directories of every vintage without modifying them. Never loads checkpoints."""
 import json
+import math
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -8,6 +9,8 @@ from pathlib import Path
 from ..core.paths import runs_dir
 
 ACTIVE_WINDOW_S = 300
+NATIVE_STALE_S = 1800   # native runs may log rarely; only call them dead after 30 minutes of silence
+RESUME_SLACK_S = 5      # metrics newer than status.json by more than this means the run was resumed after it "stopped"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 MARKERS = ("run.json", "config.json", "metrics.jsonl", "status.json", "meta.json")
 
@@ -128,7 +131,7 @@ def describe_run(path):
     info.target_steps = train_cfg.get("max_updates") if isinstance(train_cfg.get("max_updates"), int) else None
     info.params = meta.get("param_count") or meta.get("params")
     info.git = info.git or meta.get("git_revision", "")
-    info.step = _step(last) if last else status.get("updates")
+    info.step = _step(last) if last and _step(last) is not None else status.get("updates")
     info.elapsed_s = last.get("elapsed") if isinstance(last.get("elapsed"), (int, float)) else status.get("elapsed")
     loss = last.get("loss")
     info.last_loss = float(loss) if isinstance(loss, (int, float)) else None
@@ -136,10 +139,19 @@ def describe_run(path):
 
     newest = max((p.stat().st_mtime for p in present.values()), default=0.0)
     info.mtime = newest
-    if info.kind == "legacy":
-        if "stopped" in status:
+    now = time.time()
+    metrics_m = present["metrics.jsonl"].stat().st_mtime if "metrics.jsonl" in present else 0.0
+    status_m = present["status.json"].stat().st_mtime if "status.json" in present else 0.0
+    if info.kind == "native":
+        started = manifest.get("started") or manifest.get("created") or 0.0
+        if info.status in ("running", "created") and now - max(metrics_m, started) > NATIVE_STALE_S:
+            info.status = "incomplete"  # trainer was killed without updating its manifest
+    elif info.kind == "legacy":
+        if "stopped" in status and metrics_m - status_m < RESUME_SLACK_S:
             info.status = {"max_updates": "done", "max_seconds": "done"}.get(status["stopped"], "stopped")
-        elif "metrics.jsonl" in present and time.time() - newest < ACTIVE_WINDOW_S:
+            if status["stopped"] == "max_seconds" and info.target_steps and (info.step or 0) < info.target_steps:
+                info.status = "timed_out"  # wall-clock budget ended it before max_updates
+        elif "metrics.jsonl" in present and now - newest < ACTIVE_WINDOW_S:
             info.status = "running"
         else:
             info.status = "incomplete"
@@ -168,14 +180,46 @@ def scan_runs():
     return infos, skipped
 
 
-def read_metrics(path, since=0, max_points=1500):
-    """Streaming read of metrics.jsonl -> {'steps': [...], 'series': {name: [...]}} with even downsampling.
+def _num(v):
+    """float, or None for bools / non-numbers / NaN / inf (the API must emit valid JSON when a run diverges)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    f = float(v)
+    return f if math.isfinite(f) else None
 
-    List-valued fields are exploded to name.0, name.1, ...; non-numeric fields are dropped. Eval rows (eval=true) go to
-    series prefixed 'eval.' so they do not interleave with training steps.
+
+def _flatten(r):
+    prefix = "eval." if r.get("eval") else ""
+    flat = {}
+    for k, v in r.items():
+        if k in ("update", "step", "eval"):
+            continue
+        if isinstance(v, list):
+            flat.update({f"{prefix}{k}.{i}": _num(x) for i, x in enumerate(v) if x is None or _num(x) is not None})
+        elif _num(v) is not None:
+            flat[prefix + k] = _num(v)
+    return flat
+
+
+def _thin(rows, n):
+    if len(rows) <= n:
+        return rows
+    stride = len(rows) / n
+    keep = {int(i * stride) for i in range(n)} | {len(rows) - 1}
+    return [rows[i] for i in sorted(keep)]
+
+
+def read_metrics(path, since=0, max_points=1500):
+    """Streaming read of metrics.jsonl -> {'steps': [...], 'series': {name: [...]}}.
+
+    List-valued fields are exploded to name.0, name.1, ... (null entries are gaps). Eval rows (eval=true) become series
+    prefixed 'eval.' on the same step as the training row they follow. Training rows are thinned evenly to max_points;
+    eval rows are sparse and always kept (up to max_points).
     """
+    if not isinstance(max_points, int) or max_points < 1:
+        raise ValueError("max_points must be a positive integer")
     f = payload_dir(path) / "metrics.jsonl"
-    rows = []
+    train, evals = [], []
     if f.exists():
         with open(f, encoding="utf-8", errors="replace") as fh:
             for ln in fh:
@@ -185,24 +229,17 @@ def read_metrics(path, since=0, max_points=1500):
                     continue
                 s = _step(r) if isinstance(r, dict) else None
                 if s is not None and s >= since:
-                    rows.append((s, r))
-    if len(rows) > max_points:
-        stride = len(rows) / max_points
-        keep = {int(i * stride) for i in range(max_points)} | {len(rows) - 1}
-        rows = [rows[i] for i in sorted(keep)]
+                    (evals if r.get("eval") else train).append((s, _flatten(r)))
+    rows = sorted(_thin(train, max_points) + _thin(evals, max_points), key=lambda x: x[0])  # stable: eval after train at equal step
+    merged = []
+    for s, flat in rows:
+        if merged and merged[-1][0] == s:
+            merged[-1][1].update(flat)
+        else:
+            merged.append((s, dict(flat)))
     steps, series = [], {}
-    for idx, (s, r) in enumerate(rows):
+    for idx, (s, flat) in enumerate(merged):
         steps.append(s)
-        prefix = "eval." if r.get("eval") else ""
-        flat = {}
-        for k, v in r.items():
-            if isinstance(v, bool) or k in ("update", "step", "eval"):
-                continue
-            if isinstance(v, (int, float)):
-                flat[prefix + k] = float(v)
-            elif isinstance(v, list) and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v):
-                flat.update({f"{prefix}{k}.{i}": float(x) for i, x in enumerate(v)})
         for k in set(series) | set(flat):
-            col = series.setdefault(k, [None] * idx)
-            col.append(flat.get(k))
+            series.setdefault(k, [None] * idx).append(flat.get(k))
     return {"steps": steps, "series": series}

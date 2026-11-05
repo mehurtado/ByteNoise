@@ -21,6 +21,12 @@ def list_modes():
 def run_suite(model: ByteModel, protocol, device="cpu", only=None):
     """Returns a schema-versioned result dict (json-serialisable)."""
     from . import modes  # noqa: F401  (registers builtin modes)
+    if only is not None:
+        if isinstance(only, str) or not all(isinstance(m, str) for m in only):
+            raise ValueError("modes must be a list of mode names")
+        stray = sorted(set(only) - set(protocol.modes))
+        if stray:
+            raise ValueError(f"modes {stray} are not in protocol {protocol.name!r} ({sorted(protocol.modes)})")
     wanted = [m for m in protocol.modes if only is None or m in only]
     unknown = [m for m in wanted if m not in _MODES]
     if unknown:
